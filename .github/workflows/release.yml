@@ -17,7 +17,7 @@
 #   GitHub 公式 actions の最新 @v4 パッチ版は Node 22 対応済み。
 #   リリース作成には gh CLI を使用することで Node 依存を排除。
 
-name: Release
+name: Release Build
 
 on:
   workflow_dispatch:
