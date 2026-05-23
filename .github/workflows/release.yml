@@ -76,14 +76,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
       # ────────────────────────────────────────────────
       # 4. 発行: セルフコンテインド単一ファイル (win-x64)
       #    利用端末への .NET Desktop Runtime インストール不要
