@@ -4,8 +4,14 @@
 #   GitHub リポジトリ → Actions → Release → Run workflow → tag を入力
 #
 # 前提:
-#   docs/release-notes/{tag}.md が存在すること
-#   (例: docs/release-notes/v0.1.1.md)
+#   docs/release-note.md に該当タグのセクションが存在すること
+#   フォーマット:
+#     ## v0.1.1
+#     ### Title
+#     タイトルテキスト
+#
+#     ### Note
+#     本文テキスト（複数行可）
 #
 # Node 20 非推奨警告への対応:
 #   GitHub 公式 actions の最新 @v4 パッチ版は Node 22 対応済み。
@@ -38,37 +44,27 @@ jobs:
 
       # ────────────────────────────────────────────────
       # 2. リリースノートのパース
-      #    docs/release-notes/{tag}.md から
-      #    ・タイトル = 最初の "# " 見出し行
-      #    ・本文     = タイトル行以降の全文
+      #    docs/release-note.md の ## {tag} セクションから
+      #    ・タイトル = ### Title 直下の行
+      #    ・本文     = ### Note 直下のテキスト
       # ────────────────────────────────────────────────
       - name: Parse release notes
         id: notes
         shell: pwsh
         run: |
           $tag     = '${{ inputs.tag }}'
-          $mdPath  = "docs/release-notes/$tag.md"
-
-          if (-not (Test-Path $mdPath)) {
-            Write-Error "リリースノートが見つかりません: $mdPath"
+          $content = Get-Content docs/release-note.md -Raw
+          $pattern = "(?s)##\s+$([regex]::Escape($tag))\s*\r?\n###\s+Title\s*\r?\n(?<title>.*?)\r?\n\r?\n###\s+Note\s*\r?\n(?<note>.*?)(\r?\n##\s+v|$)"
+          $m = [regex]::Match($content, $pattern)
+          if (-not $m.Success) {
+            Write-Error "docs/release-note.md に $tag の記載がありません"
             exit 1
           }
+          $title = $m.Groups['title'].Value.Trim()
+          $note  = $m.Groups['note'].Value.Trim()
 
-          $lines = Get-Content $mdPath -Encoding utf8
-
-          # 最初の "# " 見出し行からタイトルを抽出
-          $headingLine = ($lines | Where-Object { $_ -match '^# ' })[0]
-          if (-not $headingLine) {
-            Write-Error "リリースノートに見出し (# ...) が見つかりません: $mdPath"
-            exit 1
-          }
-          $title = $headingLine -replace '^#\s+', ''
           "title=$title" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-          # タイトル行の次行以降を本文として release_body.md に保存
-          $titleIdx  = [Array]::IndexOf($lines, $headingLine)
-          $bodyLines = $lines[($titleIdx + 1)..($lines.Length - 1)]
-          $bodyLines | Set-Content -Path 'release_body.md' -Encoding utf8
+          $note | Set-Content -Path 'release_body.md' -Encoding utf8
 
       # ────────────────────────────────────────────────
       # 3. ビルド環境セットアップ
