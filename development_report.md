@@ -16,7 +16,7 @@
 
 ### v0.1.2 対応内容
 
-#### 発端
+#### 背景・発端
 
 実機確認で、以下のMP4動画を読み込んだところプレビューに失敗した。
 
@@ -50,17 +50,41 @@
 - v0.1.2ではエラーメッセージと切り分け手順の案内改善に留める
 - 自動faststart化・プレビュー用一時ファイル生成はv0.2.0以降の検討事項とする
 
+#### 原因分析
+
+Edgeで再生できるのに本ツールで再生できない事象から、コーデック非対応ではなく読み込み方式（仮想ホスト）の問題と判断。
+
+| 可能性 | 説明 |
+|--------|------|
+| 仮想ホスト経由 range request 不全 | `SetVirtualHostNameToFolderMapping` 経由のHTTP range requestが大容量MP4で正常機能しない可能性 |
+| moov atom末尾配置 | faststart未対応MP4での仮想ホスト先読み失敗 |
+| WebView2バッファリング制約 | 長時間・大容量ファイルの内部バッファリング上限 |
+
+#### 対応方針の判断
+
+読み込み方式をffile-uri主方式に切り替える。
+
+- **理由:** Edgeで再生できる = ChromiumのネイティブFile APIは機能する。問題は仮想ホスト経由の間接アクセス。player.htmlをfile://で読み込めば動画もfile://でアクセスでき、CORS制約なし・Chroimiumネイティブ処理で安定性向上が見込める
+- **フォールバック:** file-uri失敗時はplayer.htmlを再ナビゲートしてvirtual-host方式で再試行
+
 #### 実施した変更
 
 | # | 変更対象 | 内容 |
 |---|----------|------|
-| 1 | `Assets/player.html` | エラーコード4（再生不可）のメッセージを「形式確認を促す」表現から「プレビュー失敗・長時間動画等の可能性」に変更。利用者向け案内（別MP4で試す・Edge確認・管理者相談）を追加 |
-| 2 | `MainForm.cs` | プレイヤーエラー時のログメッセージを改善。`OnVideoPlayerError` で確認方法3ステップ（Edge直接再生・30秒サンプル・faststart化）を出力するよう変更 |
-| 3 | `docs/test_scenarios.md` | MP4/AVCプレビュー失敗時の切り分け手順（Edge再生・30秒サンプル・faststart化）とコマンド例を追加（セクション8） |
-| 4 | `docs/tool_design.md` | セクション4.5として設計判断を追記：対象外ではなく相性問題、v0.1.2は案内のみ、v0.2.0以降の検討事項を明記 |
-| 5 | `README.md` | 「対応形式と注意事項」セクションを追加：MP4/AVC/AACが主対象だが長時間・大容量でプレビュー失敗の可能性あり |
-| 6 | `manuals/user_manual.md` | 「プレビューで再生できませんでした」のエラー対処を追加：Edge確認・変換は試せる旨 |
-| 7 | `manuals/admin_manual.md` | 8-2の障害対応に「MP4/AVCなのにプレビューできない場合」の切り分け手順を追加（Step1〜3、ffmpegコマンド例付き） |
+| 1 | `MainForm.cs` | WebView2 初期化時のplayer.html読み込みを `https://app.local/Assets/player.html`（仮想ホスト）から `file:///<appDir>/Assets/player.html`（file-uri）に変更 |
+| 2 | `MainForm.cs` | `LoadVideoInPlayer` を file-uri主方式に変更。`_loadAttempt` フィールドで試行状態を管理 |
+| 3 | `MainForm.cs` | `LoadVideoViaVirtualHost` メソッドを追加（フォールバック専用） |
+| 4 | `MainForm.cs` | `OnNavigationCompleted` ハンドラを追加。フォールバック再ナビゲーション後に動画読み込みを実行 |
+| 5 | `MainForm.cs` | `OnVideoPlayerError` にフォールバック分岐を追加。file-uri失敗時はapp.local再設定→player.html再ナビゲーション→virtual-host読み込み |
+| 6 | `MainForm.cs` | `loaded`/`error` メッセージから `method` フィールドを受け取りログに記録 |
+| 7 | `Assets/player.html` | `load` コマンドから `method` を受け取り `currentMethod` に保存。`loaded`/`error` メッセージで method を返送 |
+| 8 | `Assets/player.html` | エラーコード4のメッセージを「Edgeで再生できる動画でも〜」に更新 |
+| 9 | `docs/test_scenarios.md` | 読み込み方式確認とEdge再生確認の切り分け手順を追加（セクション8） |
+| 10 | `docs/tool_design.md` | セクション4.5をv0.1.2実装方針（file-uri主/virtual-host fallback）で改訂 |
+| 11 | `README.md` | プレビュー方式説明・「プレビュー不可時は変換不可」を明記 |
+| 12 | `manuals/user_manual.md` | プレビュー不可時の制約（変換不可）と対処手順を更新 |
+| 13 | `manuals/admin_manual.md` | ログ確認方法と切り分け手順（Step1〜3）を追記 |
+| 14 | `docs/release_checklist.md` | 読み込み方式確認チェック項目を追加 |
 
 #### 対応しなかった内容（v0.2.0以降）
 

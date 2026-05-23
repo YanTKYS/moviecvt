@@ -65,6 +65,7 @@
     const video = document.getElementById('video');
     const placeholder = document.getElementById('placeholder');
     const errorMsg = document.getElementById('error-msg');
+    let currentMethod = 'unknown'; // 現在の読み込み方式 (C#から渡される)
 
     function sendMsg(obj) {
       try {
@@ -79,7 +80,7 @@
     video.addEventListener('loadedmetadata', function () {
       placeholder.style.display = 'none';
       video.style.display = 'block';
-      sendMsg({ type: 'loaded', d: video.duration });
+      sendMsg({ type: 'loaded', d: video.duration, method: currentMethod });
     });
 
     video.addEventListener('timeupdate', function () {
@@ -119,16 +120,15 @@
       if (errCode === 4) {
         errorMsg.innerHTML =
           '⚠ ' + errMsg + '<br>' +
-          '<span style="font-size:11px">MP4/H.264形式でも、長時間動画・大容量動画・一部のMP4構造では再生できない場合があります。</span><br><br>' +
+          '<span style="font-size:11px">Microsoft Edgeで再生できる動画でも、この画面では再生できない場合があります。</span><br><br>' +
           '<span style="font-size:11px; text-align:left; display:block">' +
           '・別のMP4で試してみてください<br>' +
-          '・Microsoft Edgeで直接このファイルを開いて再生できるか確認してください<br>' +
-          '・再生できない場合は管理者またはDX担当へご相談ください' +
+          '・管理者またはDX担当へご相談ください' +
           '</span>';
       } else {
         errorMsg.innerHTML = '⚠ 動画を読み込めませんでした<br><span style="font-size:11px">' + errMsg + '</span>';
       }
-      sendMsg({ type: 'error', msg: errMsg });
+      sendMsg({ type: 'error', msg: errMsg, method: currentMethod });
     });
 
     // ── C# からのコマンド受信 ─────────────────────────────────────
@@ -143,6 +143,7 @@
 
       switch (msg.cmd) {
         case 'load':
+          currentMethod = msg.method || 'unknown';
           // エラー表示をリセット
           errorMsg.style.display = 'none';
           video.style.display = 'none';
