@@ -1,0 +1,43 @@
+# CI ビルド — main ブランチへの PR マージ後に自動実行
+#
+# Node 20 非推奨警告への対応:
+#   GitHub 公式 actions の最新 @v4 パッチ版は Node 22 対応済み。
+#   サードパーティ actions は使用せず gh CLI で代替することで Node 依存を最小化。
+
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build (Release)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore src/MovieConverter/MovieConverter.csproj
+
+      - name: Build
+        run: >
+          dotnet build src/MovieConverter/MovieConverter.csproj
+          -c Release
+          --no-restore
