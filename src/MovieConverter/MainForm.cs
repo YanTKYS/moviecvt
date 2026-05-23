@@ -505,8 +505,10 @@ namespace MovieConverter
 
             try
             {
-                // アプリディレクトリを仮想ホストにマップ（プレイヤーHTML読み込み用）
-                string appDir = AppDomain.CurrentDomain.BaseDirectory;
+                // シングルファイル発行時も実行ファイルと同階層の Assets/ を参照できるよう
+                // Environment.ProcessPath から親ディレクトリを取得する
+                string appDir = Path.GetDirectoryName(Environment.ProcessPath)
+                    ?? AppContext.BaseDirectory;
                 webView2.CoreWebView2.SetVirtualHostNameToFolderMapping(
                     "app.local", appDir,
                     CoreWebView2HostResourceAccessKind.Allow);

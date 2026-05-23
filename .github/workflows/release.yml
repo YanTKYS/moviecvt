@@ -1,0 +1,169 @@
+# リリースビルド — 手動実行 (workflow_dispatch)
+#
+# 実行方法:
+#   GitHub リポジトリ → Actions → Release → Run workflow → tag を入力
+#
+# 前提:
+#   docs/release-notes/{tag}.md が存在すること
+#   (例: docs/release-notes/v0.1.1.md)
+#
+# Node 20 非推奨警告への対応:
+#   GitHub 公式 actions の最新 @v4 パッチ版は Node 22 対応済み。
+#   リリース作成には gh CLI を使用することで Node 依存を排除。
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'リリースタグ（例: v0.1.1）'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # タグ・リリースの作成に必要
+
+jobs:
+  release:
+    name: Release Build & Publish
+    runs-on: windows-latest
+
+    steps:
+      # ────────────────────────────────────────────────
+      # 1. ソース取得
+      # ────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ────────────────────────────────────────────────
+      # 2. リリースノートのパース
+      #    docs/release-notes/{tag}.md から
+      #    ・タイトル = 最初の "# " 見出し行
+      #    ・本文     = タイトル行以降の全文
+      # ────────────────────────────────────────────────
+      - name: Parse release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $tag     = '${{ inputs.tag }}'
+          $mdPath  = "docs/release-notes/$tag.md"
+
+          if (-not (Test-Path $mdPath)) {
+            Write-Error "リリースノートが見つかりません: $mdPath"
+            exit 1
+          }
+
+          $lines = Get-Content $mdPath -Encoding utf8
+
+          # 最初の "# " 見出し行からタイトルを抽出
+          $headingLine = ($lines | Where-Object { $_ -match '^# ' })[0]
+          if (-not $headingLine) {
+            Write-Error "リリースノートに見出し (# ...) が見つかりません: $mdPath"
+            exit 1
+          }
+          $title = $headingLine -replace '^#\s+', ''
+          "title=$title" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          # タイトル行の次行以降を本文として release_body.md に保存
+          $titleIdx  = [Array]::IndexOf($lines, $headingLine)
+          $bodyLines = $lines[($titleIdx + 1)..($lines.Length - 1)]
+          $bodyLines | Set-Content -Path 'release_body.md' -Encoding utf8
+
+      # ────────────────────────────────────────────────
+      # 3. ビルド環境セットアップ
+      # ────────────────────────────────────────────────
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # ────────────────────────────────────────────────
+      # 4. 発行: セルフコンテインド単一ファイル (win-x64)
+      #    利用端末への .NET Desktop Runtime インストール不要
+      # ────────────────────────────────────────────────
+      - name: Publish (self-contained single-file, win-x64)
+        run: >
+          dotnet publish src/MovieConverter/MovieConverter.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:PublishReadyToRun=true
+          -o publish/app
+
+      # ────────────────────────────────────────────────
+      # 5. リリース ZIP 作成
+      #
+      #    ZIP 内構造:
+      #      MovieConverter/
+      #        MovieConverter.exe     ← 単体実行可能 (self-contained)
+      #        Assets/
+      #          player.html
+      #        bin/ffmpeg/
+      #          README.txt           ← ffmpeg.exe 配置案内
+      #        docs/
+      #          ffmpeg_setup.md
+      #          license_notice.md
+      #        manuals/
+      #          user_manual.md
+      # ────────────────────────────────────────────────
+      - name: Create release ZIP
+        id: zip
+        shell: pwsh
+        run: |
+          $tag    = '${{ inputs.tag }}'
+          $root   = 'release_pkg/MovieConverter'
+          $zipOut = "MovieConverter_${tag}_win-x64.zip"
+
+          # ディレクトリ構造を作成
+          foreach ($d in @(
+            "$root/Assets",
+            "$root/bin/ffmpeg",
+            "$root/docs",
+            "$root/manuals"
+          )) {
+            New-Item -ItemType Directory -Path $d -Force | Out-Null
+          }
+
+          # アプリ本体と必須アセット
+          Copy-Item 'publish/app/MovieConverter.exe' "$root/"
+          Copy-Item 'publish/app/Assets/player.html' "$root/Assets/"
+
+          # ユーザー向けドキュメント
+          Copy-Item 'docs/ffmpeg_setup.md'   "$root/docs/"
+          Copy-Item 'docs/license_notice.md' "$root/docs/"
+          Copy-Item 'manuals/user_manual.md' "$root/manuals/"
+
+          # ffmpeg 配置案内テキスト
+          @'
+ここに ffmpeg.exe を配置してください。
+入手・配置の手順は docs\ffmpeg_setup.md を参照してください。
+'@ | Set-Content "$root/bin/ffmpeg/README.txt" -Encoding utf8
+
+          # ZIP 圧縮（最適圧縮）
+          Compress-Archive -Path "$root" -DestinationPath $zipOut -CompressionLevel Optimal
+          "zip_name=$zipOut" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # ────────────────────────────────────────────────
+      # 6. GitHub Release 作成 (gh CLI — Node 依存なし)
+      #    タグが未作成の場合は実行ブランチ HEAD に自動作成
+      # ────────────────────────────────────────────────
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "${{ inputs.tag }}" \
+            --title "${{ steps.notes.outputs.title }}" \
+            --notes-file release_body.md \
+            --target "${{ github.ref_name }}" \
+            "${{ steps.zip.outputs.zip_name }}"
