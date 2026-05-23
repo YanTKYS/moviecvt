@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MovieConverter Player</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #1a1a1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #placeholder {
+      color: #888888;
+      font-family: "Meiryo UI", "Meiryo", sans-serif;
+      font-size: 13px;
+      text-align: center;
+      line-height: 1.8;
+      pointer-events: none;
+    }
+
+    #video {
+      max-width: 100%;
+      max-height: 100vh;
+      display: none;
+      background-color: #000;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="placeholder">
+    MP4ファイルを選択すると<br>ここに動画が表示されます
+  </div>
+
+  <video id="video" preload="metadata"></video>
+
+  <script>
+    'use strict';
+
+    const video = document.getElementById('video');
+    const placeholder = document.getElementById('placeholder');
+
+    function sendMsg(obj) {
+      try {
+        window.chrome.webview.postMessage(JSON.stringify(obj));
+      } catch (err) {
+        // WebView2 が未初期化の場合は無視
+      }
+    }
+
+    // ── 動画イベント → C# へ通知 ──────────────────────────────────
+
+    video.addEventListener('loadedmetadata', function () {
+      placeholder.style.display = 'none';
+      video.style.display = 'block';
+      sendMsg({ type: 'loaded', d: video.duration });
+    });
+
+    video.addEventListener('timeupdate', function () {
+      sendMsg({
+        type: 'timeupdate',
+        t: video.currentTime,
+        d: video.duration
+      });
+    });
+
+    video.addEventListener('play', function () {
+      sendMsg({ type: 'playing' });
+    });
+
+    video.addEventListener('pause', function () {
+      sendMsg({ type: 'paused' });
+    });
+
+    video.addEventListener('ended', function () {
+      sendMsg({ type: 'ended' });
+    });
+
+    video.addEventListener('error', function () {
+      var errMsg = '不明なエラー';
+      if (video.error) {
+        switch (video.error.code) {
+          case 1: errMsg = 'メディアの読み込みが中断されました'; break;
+          case 2: errMsg = 'ネットワークエラー（ローカルファイルのため通常発生しません）'; break;
+          case 3: errMsg = 'デコードエラー：ファイルが破損しているか非対応の形式です'; break;
+          case 4: errMsg = 'このファイル形式には対応していません'; break;
+        }
+      }
+      sendMsg({ type: 'error', msg: errMsg });
+    });
+
+    // ── C# からのコマンド受信 ─────────────────────────────────────
+
+    window.chrome.webview.addEventListener('message', function (event) {
+      var msg;
+      try {
+        msg = JSON.parse(event.data);
+      } catch (e) {
+        return;
+      }
+
+      switch (msg.cmd) {
+        case 'load':
+          video.src = msg.src;
+          video.load();
+          break;
+
+        case 'play':
+          video.play().catch(function (err) {
+            sendMsg({ type: 'error', msg: err.toString() });
+          });
+          break;
+
+        case 'pause':
+          video.pause();
+          break;
+
+        case 'seek':
+          if (typeof msg.t === 'number' && isFinite(msg.t)) {
+            var duration = video.duration;
+            if (isFinite(duration) && duration > 0) {
+              video.currentTime = Math.max(0, Math.min(msg.t, duration));
+            }
+          }
+          break;
+      }
+    });
+  </script>
+
+</body>
+</html>
