@@ -140,23 +140,28 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 | `Assets\player.html` が存在するか | 配布パッケージに含まれているか確認 |
 | WebView2 のユーザーデータフォルダが破損していないか | `%TEMP%\MovieConverter_WebView2\` を削除して再起動する |
 
-#### MP4/AVC(H.264) なのにプレビューできない場合（v0.1.2追記）
+#### MP4/AVC(H.264) なのにプレビューできない場合（v0.1.2改訂）
 
-MP4/AVC/H.264/AACの動画であっても、WebView2のHTML videoで再生できない場合があります。
-AVC非対応ではなく、以下の原因が考えられます。
+MP4/AVC/H.264/AACの動画であっても、WebView2のプレビューで再生できない場合があります。
+これはAVC非対応ではなく、プレビュー読み込み方式との相性問題です。
 
-- 長時間動画（1時間超）・大容量動画（1GiB超）での読み込み失敗
-- MP4のmoov atomが末尾に配置されている（faststart未対応）
-- WebView2 Runtime版やEdge側のバッファリング制約
+**v0.1.2の対応:** file-uri方式（主）→ virtual-host方式（フォールバック）の自動切り替えを実装済み。ログで確認できます。
 
-**切り分け手順:**
+**ログ確認:**
+- `[プレイヤー] file-uri方式で読み込みます` → 主方式で試行中
+- `[読み込み成功] 方式: file-uri` → file-uri方式で成功
+- `[フォールバック] file-uri方式が失敗しました。virtual-host方式を試みます。` → フォールバック発動
+- `[読み込み成功] 方式: virtual-host` → フォールバック方式で成功
+- `[プレイヤー エラー] プレビューで再生できませんでした。` → 両方式とも失敗
+
+**両方式とも失敗した場合の切り分け手順:**
 
 **Step 1 — Microsoft Edge での直接再生確認**
 
 対象MP4をEdgeのウィンドウにドラッグ＆ドロップして再生できるか確認する。
 
 - Edge で再生できない → 動画ファイル自体に問題がある可能性が高い
-- Edge で再生できる → WebView2プレビュー方式との相性問題、または下記を試す
+- Edge で再生できる → 下記 Step 2 以降を試す
 
 **Step 2 — 30秒サンプルで確認**
 
@@ -174,7 +179,7 @@ ffmpeg -i input.mp4 -c copy -movflags +faststart output_faststart.mp4
 
 faststart化後に再生できる場合 → moov atomの末尾配置が原因だった
 
-**v0.1.2 の対応範囲:** 案内・切り分け手順の整備のみ。自動faststart化はv0.2.0以降の検討事項。
+**現状の制約:** プレビューできない場合、利用者はカット位置を指定できないため変換が実行できません。自動faststart化はv0.2.0以降の検討事項です。
 
 ### 8-3. 変換に失敗する
 

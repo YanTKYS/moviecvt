@@ -64,6 +64,8 @@ namespace MovieConverter
         private bool _isSeekBarUpdating;
         private bool _webView2Ready;
         private bool _videoLoaded;
+        private int _loadAttempt;          // 0 = file-uri（主）, 1 = virtual-host（フォールバック）
+        private string? _pendingLoadAfterNav; // フォールバック再ナビゲーション後に読み込むファイル
         private CancellationTokenSource? _cancelSource;
         private readonly FfmpegRunner _ffmpeg = new();
 
@@ -81,7 +83,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.1.1";
+            Text = "動画簡易変換ツール  v0.1.2";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -505,21 +507,22 @@ namespace MovieConverter
 
             try
             {
-                // シングルファイル発行時も実行ファイルと同階層の Assets/ を参照できるよう
-                // Environment.ProcessPath から親ディレクトリを取得する
                 string appDir = Path.GetDirectoryName(Environment.ProcessPath)
                     ?? AppContext.BaseDirectory;
-                webView2.CoreWebView2.SetVirtualHostNameToFolderMapping(
-                    "app.local", appDir,
-                    CoreWebView2HostResourceAccessKind.Allow);
 
                 webView2.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-                webView2.CoreWebView2.Navigate("https://app.local/Assets/player.html");
+                // フォールバック（virtual-host方式）の再ナビゲーション完了後に動画を読み込む
+                webView2.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+
+                // 主方式: file:// URI で player.html を直接ロード
+                // → 動画も file:// URI で読み込むため、CORS制約なしで大容量ファイルを扱える
+                string playerPath = Path.Combine(appDir, "Assets", "player.html");
+                webView2.CoreWebView2.Navigate(new Uri(playerPath).AbsoluteUri);
 
                 _webView2Ready = true;
                 webView2.Visible = true;
                 lblPreviewHint.Visible = false;
-                AppendLog("[準備完了] 動画プレビューの初期化に成功しました。");
+                AppendLog("[準備完了] 動画プレビューの初期化に成功しました。（file-uri方式）");
 
                 // 初期化完了前にファイルが選択されていた場合は読み込み直す
                 if (!string.IsNullOrEmpty(_inputFile))
@@ -555,6 +558,9 @@ namespace MovieConverter
                     case "loaded":
                         _duration = root.TryGetProperty("d", out var dp)
                             ? dp.GetDouble() : 0;
+                        string loadedMethod = root.TryGetProperty("method", out var lmp)
+                            ? lmp.GetString() ?? "unknown" : "unknown";
+                        AppendLog($"[読み込み成功] 方式: {loadedMethod}");
                         _videoLoaded = true;
                         OnVideoLoaded();
                         break;
@@ -582,7 +588,9 @@ namespace MovieConverter
                         string msg = root.TryGetProperty("msg", out var mp)
                             ? mp.GetString() ?? "不明なエラー"
                             : "不明なエラー";
-                        AppendLog($"[プレイヤー エラー] プレビューで再生できませんでした。");
+                        string errMethod = root.TryGetProperty("method", out var emp)
+                            ? emp.GetString() ?? "unknown" : "unknown";
+                        AppendLog($"[プレイヤー エラー] プレビューで再生できませんでした。（方式: {errMethod}）");
                         AppendLog($"  詳細: {msg}");
                         OnVideoPlayerError(msg);
                         break;
@@ -605,18 +613,47 @@ namespace MovieConverter
         private void LoadVideoInPlayer(string filePath)
         {
             if (!_webView2Ready) return;
+            _loadAttempt = 0;
+            // 主方式: file:// URI — player.html が file:// で動作しているためCORS制約なし
+            string src = new Uri(filePath).AbsoluteUri;
+            AppendLog($"[プレイヤー] file-uri方式で読み込みます");
+            SendToPlayer(
+                $"{{\"cmd\":\"load\",\"src\":\"{EscapeJsonString(src)}\",\"method\":\"file-uri\"}}");
+        }
 
+        private void LoadVideoViaVirtualHost(string filePath)
+        {
+            // フォールバック方式: https://video.local/ 仮想ホスト経由
+            // player.html を app.local に再ナビゲートした後に呼ばれる
             string? dir = Path.GetDirectoryName(filePath);
             if (dir == null) return;
-
-            // 動画ディレクトリを仮想ホストにマップ（ファイルアクセス用）
             webView2.CoreWebView2.SetVirtualHostNameToFolderMapping(
                 "video.local", dir,
                 CoreWebView2HostResourceAccessKind.Allow);
-
             string fileName = Uri.EscapeDataString(Path.GetFileName(filePath));
             string src = $"https://video.local/{fileName}";
-            SendToPlayer($"{{\"cmd\":\"load\",\"src\":\"{EscapeJsonString(src)}\"}}");
+            AppendLog($"[フォールバック] virtual-host方式で読み込みます");
+            SendToPlayer(
+                $"{{\"cmd\":\"load\",\"src\":\"{EscapeJsonString(src)}\",\"method\":\"virtual-host\"}}");
+        }
+
+        private void SetupAppLocalVirtualHost()
+        {
+            string appDir = Path.GetDirectoryName(Environment.ProcessPath)
+                ?? AppContext.BaseDirectory;
+            webView2.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "app.local", appDir,
+                CoreWebView2HostResourceAccessKind.Allow);
+        }
+
+        private void OnNavigationCompleted(
+            object? sender,
+            CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (!e.IsSuccess || string.IsNullOrEmpty(_pendingLoadAfterNav)) return;
+            string file = _pendingLoadAfterNav;
+            _pendingLoadAfterNav = null;
+            LoadVideoViaVirtualHost(file);
         }
 
         private static string EscapeJsonString(string s)
@@ -704,6 +741,21 @@ namespace MovieConverter
 
         private void OnVideoPlayerError(string errorMessage)
         {
+            // file-uri方式が失敗した場合 → virtual-host方式にフォールバック
+            if (_loadAttempt == 0 && !string.IsNullOrEmpty(_inputFile))
+            {
+                _loadAttempt = 1;
+                AppendLog("[フォールバック] file-uri方式が失敗しました。virtual-host方式を試みます。");
+                SetStatus("状態: 別の方式で再読み込み中...", Color.FromArgb(60, 60, 60));
+                // app.local仮想ホストを設定してからプレイヤーページを再ナビゲート
+                // NavigationCompleted後に LoadVideoViaVirtualHost が呼ばれる
+                SetupAppLocalVirtualHost();
+                _pendingLoadAfterNav = _inputFile;
+                webView2.CoreWebView2.Navigate("https://app.local/Assets/player.html");
+                return;
+            }
+
+            // 両方式とも失敗（または単独試行で失敗）
             _videoLoaded = false;
             btnPlayPause.Enabled = false;
             btnBack5.Enabled = false;

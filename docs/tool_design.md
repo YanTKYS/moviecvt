@@ -103,28 +103,38 @@ WinForms で AxWindowsMediaPlayer を使う方法もあるが、.NET 8 + SDK ス
 
 ---
 
-### 4.5 WebView2 HTML video で再生できないMP4が存在することの設計上の扱い（v0.1.2追記）
+### 4.5 WebView2 プレビュー読み込み方式（v0.1.2改訂）
 
 **確認された事象:**
 
-実機確認で、AVC/H.264・AAC・MP4コンテナの動画（isom/iso2/avc1/mp41、High@L3.1、1280×720、30fps、約3時間20分、約1.55GiB）を読み込んだところ、WebView2のプレビューで再生できないケースが発生した。
+実機確認で、AVC/H.264・AAC・MP4コンテナの動画（isom/iso2/avc1/mp41、High@L3.1、1280×720、30fps、約3時間20分、約1.55GiB）を読み込んだところ、WebView2のプレビューで再生できないケースが発生した。同じ動画をMicrosoft Edgeで直接開くと再生できた。
 
-**原因の考察:**
+**原因分析:**
 
-AVC非対応ではなく、以下の可能性がある。
+AVC非対応ではなく、v0.1.0〜v0.1.1の `https://video.local/` 仮想ホスト方式に問題がある可能性が高い。
 
-- WebView2のHTML videoで長時間・大容量MP4を読み込めない制約
-- MP4のmoov atomが末尾に配置されている（faststart未対応）による先読み失敗
-- WebView2 RuntimeまたはEdge側のバッファリング・読み込み制約
-- 仮想ホスト（SetVirtualHostNameToFolderMapping）経由の大容量ファイル読み込みとの相性
+- `SetVirtualHostNameToFolderMapping` 経由でのHTTP range requestが大容量MP4で正常に機能しない可能性
+- moov atom末尾配置（faststart未対応）MP4での仮想ホスト先読み失敗
+- Edge自体の file:// 直接アクセスとは読み込みメカニズムが異なる
 
-**設計判断:**
+**v0.1.2 実装方針:**
 
-- MP4/AVC(H.264)/AACは初期版の主対象である（方針変更なし）
-- ただし、形式として対象内のMP4でもWebView2プレビューで再生できない場合がある
-- これはFFmpeg変換エンジンの非対応とは別の問題であり、変換は成功する可能性がある
-- v0.1.2では自動補正・自動faststart化は行わず、エラーメッセージと切り分け手順の案内に留める
+| 方式 | 説明 | 採用 |
+|------|------|------|
+| file-uri（主） | player.html を `file://` URI で読み込み、動画も `file://` URI で指定。CORS制約なし、Chromiumのネイティブファイルアクセスを使用 | 主方式 |
+| virtual-host（フォールバック） | file-uri方式が失敗した場合に `https://app.local/` + `https://video.local/` 仮想ホストで再試行。player.htmlの再ナビゲーションを伴う | フォールバック |
+
+**方式選択の理由:**
+
+- file-uri方式はChroimiumが大容量ファイルのrange requestをネイティブに処理するため、仮想ホスト方式より安定する可能性が高い
+- フォールバック実装により、file-uri方式が予期しない理由で失敗した場合にも旧方式での読み込みを試みる
+- 両方式のページコンテキストが CORS 制約により互いに排他的なため、フォールバック時はplayer.htmlを再ナビゲートする
+
+**設計上の制約:**
+
+- 初期版では、プレビューできるMP4を変換対象とする（プレビュー不可の場合はカット位置が指定できない）
 - 自動faststart化・プレビュー用一時ファイル生成はv0.2.0以降の検討事項とする
+- MP4/AVC(H.264)/AACは引き続き初期版の主対象である
 
 ---
 
