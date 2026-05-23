@@ -30,6 +30,17 @@
       pointer-events: none;
     }
 
+    #error-msg {
+      display: none;
+      color: #ff8080;
+      font-family: "Meiryo UI", "Meiryo", sans-serif;
+      font-size: 13px;
+      text-align: center;
+      line-height: 1.8;
+      max-width: 80%;
+      pointer-events: none;
+    }
+
     #video {
       max-width: 100%;
       max-height: 100vh;
@@ -44,6 +55,8 @@
     MP4ファイルを選択すると<br>ここに動画が表示されます
   </div>
 
+  <div id="error-msg"></div>
+
   <video id="video" preload="metadata"></video>
 
   <script>
@@ -51,6 +64,7 @@
 
     const video = document.getElementById('video');
     const placeholder = document.getElementById('placeholder');
+    const errorMsg = document.getElementById('error-msg');
 
     function sendMsg(obj) {
       try {
@@ -92,12 +106,17 @@
       var errMsg = '不明なエラー';
       if (video.error) {
         switch (video.error.code) {
-          case 1: errMsg = 'メディアの読み込みが中断されました'; break;
-          case 2: errMsg = 'ネットワークエラー（ローカルファイルのため通常発生しません）'; break;
-          case 3: errMsg = 'デコードエラー：ファイルが破損しているか非対応の形式です'; break;
-          case 4: errMsg = 'このファイル形式には対応していません'; break;
+          case 1: errMsg = '読み込みが中断されました'; break;
+          case 2: errMsg = 'ファイルの読み取りに失敗しました'; break;
+          case 3: errMsg = 'デコードに失敗しました（ファイルが破損しているか、非対応のコーデックです）'; break;
+          case 4: errMsg = 'このファイルは再生できません（MP4/H.264 形式か確認してください）'; break;
         }
       }
+      // エラーメッセージをプレイヤー内に表示
+      placeholder.style.display = 'none';
+      video.style.display = 'none';
+      errorMsg.style.display = 'block';
+      errorMsg.innerHTML = '⚠ 動画を読み込めませんでした<br><span style="font-size:11px">' + errMsg + '</span>';
       sendMsg({ type: 'error', msg: errMsg });
     });
 
@@ -113,6 +132,11 @@
 
       switch (msg.cmd) {
         case 'load':
+          // エラー表示をリセット
+          errorMsg.style.display = 'none';
+          video.style.display = 'none';
+          placeholder.style.display = 'block';
+          placeholder.innerHTML = '読み込み中...';
           video.src = msg.src;
           video.load();
           break;

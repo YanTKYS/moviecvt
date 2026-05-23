@@ -19,8 +19,11 @@ namespace MovieConverter
 
         public FfmpegRunner()
         {
-            string appDir = AppDomain.CurrentDomain.BaseDirectory;
-            FfmpegPath = Path.Combine(appDir, FfmpegRelativePath);
+            // 単一ファイル発行時は AppContext.BaseDirectory が一時展開先になるため、
+            // 実行ファイルの物理パスから親フォルダを取得する
+            string exeDir = Path.GetDirectoryName(Environment.ProcessPath)
+                ?? AppContext.BaseDirectory;
+            FfmpegPath = Path.Combine(exeDir, FfmpegRelativePath);
         }
 
         public bool IsAvailable => File.Exists(FfmpegPath);

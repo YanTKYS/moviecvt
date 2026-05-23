@@ -1,0 +1,16 @@
+# .NET ビルド成果物
+obj/
+bin/
+publish/
+*.user
+
+# Visual Studio
+.vs/
+*.suo
+*.sdf
+
+# FFmpeg本体（別途配置）
+# bin/ffmpeg/*.exe は .gitkeep で管理
+bin/ffmpeg/ffmpeg.exe
+bin/ffmpeg/ffprobe.exe
+bin/ffmpeg/ffplay.exe

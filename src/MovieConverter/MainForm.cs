@@ -81,7 +81,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.1.0";
+            Text = "動画簡易変換ツール  v0.1.1";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -518,6 +518,13 @@ namespace MovieConverter
                 webView2.Visible = true;
                 lblPreviewHint.Visible = false;
                 AppendLog("[準備完了] 動画プレビューの初期化に成功しました。");
+
+                // 初期化完了前にファイルが選択されていた場合は読み込み直す
+                if (!string.IsNullOrEmpty(_inputFile))
+                {
+                    AppendLog("[再読み込み] 選択済みファイルをプレビューに読み込みます。");
+                    LoadVideoInPlayer(_inputFile);
+                }
             }
             catch (Exception ex)
             {
@@ -574,6 +581,7 @@ namespace MovieConverter
                             ? mp.GetString() ?? "不明なエラー"
                             : "不明なエラー";
                         AppendLog($"[プレイヤー エラー] {msg}");
+                        OnVideoPlayerError(msg);
                         break;
                 }
             }
@@ -652,6 +660,7 @@ namespace MovieConverter
             _currentTime = 0;
             _duration = 0;
             _isPlaying = false;
+            UpdatePlayPauseButton();
 
             var fi = new FileInfo(filePath);
             lblFilePath.Text = $"ファイル: {fi.FullName}";
@@ -684,9 +693,27 @@ namespace MovieConverter
             txtStartTime.Enabled = true;
             txtEndTime.Enabled = true;
 
+            AppendLog($"[読み込み完了] 動画時間: {SecondsToHms(_duration)}");
             UpdateConvertButton();
             SetStatus("状態: 待機中 — 開始・終了位置を設定して「変換実行」を押してください",
                 Color.FromArgb(60, 60, 60));
+        }
+
+        private void OnVideoPlayerError(string errorMessage)
+        {
+            _videoLoaded = false;
+            btnPlayPause.Enabled = false;
+            btnBack5.Enabled = false;
+            btnForward5.Enabled = false;
+            btnSetStart.Enabled = false;
+            btnSetEnd.Enabled = false;
+            txtStartTime.Enabled = false;
+            txtEndTime.Enabled = false;
+            trkSeek.Enabled = false;
+            UpdateConvertButton();
+
+            SetStatus("状態: 動画の読み込みに失敗しました", Color.OrangeRed);
+            AppendLog("  ヒント: ファイルが破損していないか、別の動画で試してみてください。");
         }
 
         // ─── 再生コントロール ─────────────────────────────────────────
@@ -868,6 +895,8 @@ namespace MovieConverter
             }
             catch (FileNotFoundException ex)
             {
+                _cancelSource?.Dispose();
+                _cancelSource = null;
                 AppendLog($"[エラー] {ex.Message}");
                 SetStatus("状態: エラーが発生しました", Color.OrangeRed);
                 ShowUserError("変換を開始できませんでした。", ex.Message);
@@ -875,6 +904,8 @@ namespace MovieConverter
             }
             catch (Exception ex)
             {
+                _cancelSource?.Dispose();
+                _cancelSource = null;
                 AppendLog($"[予期しないエラー] {ex.Message}");
                 SetStatus("状態: エラー", Color.OrangeRed);
                 SetConvertingState(false);
