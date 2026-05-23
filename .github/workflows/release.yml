@@ -34,6 +34,8 @@ jobs:
   release:
     name: Release Build & Publish
     runs-on: windows-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       # ────────────────────────────────────────────────
