@@ -140,10 +140,10 @@ jobs:
           Copy-Item 'manuals/user_manual.md' "$root/manuals/"
 
           # ffmpeg 配置案内テキスト
-          @'
-ここに ffmpeg.exe を配置してください。
-入手・配置の手順は docs\ffmpeg_setup.md を参照してください。
-'@ | Set-Content "$root/bin/ffmpeg/README.txt" -Encoding utf8
+          @(
+            "ここに ffmpeg.exe を配置してください。",
+            "入手・配置の手順は docs\ffmpeg_setup.md を参照してください。"
+          ) | Set-Content "$root/bin/ffmpeg/README.txt" -Encoding utf8
 
           # ZIP 圧縮（最適圧縮）
           Compress-Archive -Path "$root" -DestinationPath $zipOut -CompressionLevel Optimal
