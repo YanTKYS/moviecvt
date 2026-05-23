@@ -1,26 +1,20 @@
-# 動画簡易変換ツール v0.1.1
+## v0.1.1
+### Title
+動画簡易変換ツール v0.1.1 — バグ修正・配布準備
 
-## 変更内容
-
+### Note
 ### バグ修正
 
 | # | 修正箇所 | 内容 |
 |---|----------|------|
-| 1 | `FfmpegRunner.cs` | 単一ファイル発行時の ffmpeg.exe パス解決を `AppDomain.CurrentDomain.BaseDirectory` から `Environment.ProcessPath` ベースに修正 |
+| 1 | `FfmpegRunner.cs` | 単一ファイル発行時の ffmpeg.exe パス解決を `Environment.ProcessPath` ベースに修正 |
 | 2 | `MainForm.cs` | WebView2 初期化完了前にファイル選択した場合、初期化完了後に自動再ロードするよう修正 |
 | 3 | `MainForm.cs` | WebView2 の appDir 解決を `Environment.ProcessPath` ベースに統一（単一ファイル発行対応） |
-| 4 | `MainForm.cs` | 変換キャンセル時・例外発生時に `_cancelSource` を確実に Dispose するよう修正 |
+| 4 | `MainForm.cs` | 変換キャンセル・例外発生時に `_cancelSource` を確実に Dispose するよう修正 |
 | 5 | `MainForm.cs` | ファイル読み込み時に `_isPlaying` をリセットし再生ボタン表示を更新するよう修正 |
 | 6 | `player.html` | 動画読み込みエラー時にエラーメッセージを表示し C# 側へ通知するよう修正 |
 
-### ドキュメント整備
-
-- `docs/ffmpeg_setup.md` — ffmpeg 入手・配置手順を追記
-- `docs/license_notice.md` — ライセンス表記を整備
-- `manuals/user_manual.md` — 操作手順を v0.1.1 向けに更新
-- `development_report.md` — v0.1.1 開発記録を追記
-
-## 配布物
+### 配布物
 
 `MovieConverter_v0.1.1_win-x64.zip`
 
@@ -38,13 +32,8 @@ MovieConverter/
     user_manual.md
 ```
 
-## 動作要件
+### 動作要件
 
 - Windows 10 / 11 (x64)
 - Microsoft Edge WebView2 Runtime（Windows 11 は標準搭載）
-- ffmpeg.exe（別途入手し `bin/ffmpeg/` に配置）
-
-## アップグレード方法
-
-前バージョンからの上書きアップグレードはサポートしていません。  
-新しいフォルダに展開し、ffmpeg.exe を改めて配置してください。
+- ffmpeg.exe（別途入手し `bin\ffmpeg\` に配置）
