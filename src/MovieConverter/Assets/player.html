@@ -103,20 +103,31 @@
     });
 
     video.addEventListener('error', function () {
+      var errCode = video.error ? video.error.code : 0;
       var errMsg = '不明なエラー';
       if (video.error) {
-        switch (video.error.code) {
+        switch (errCode) {
           case 1: errMsg = '読み込みが中断されました'; break;
           case 2: errMsg = 'ファイルの読み取りに失敗しました'; break;
           case 3: errMsg = 'デコードに失敗しました（ファイルが破損しているか、非対応のコーデックです）'; break;
-          case 4: errMsg = 'このファイルは再生できません（MP4/H.264 形式か確認してください）'; break;
+          case 4: errMsg = 'プレビューで再生できませんでした'; break;
         }
       }
-      // エラーメッセージをプレイヤー内に表示
       placeholder.style.display = 'none';
       video.style.display = 'none';
       errorMsg.style.display = 'block';
-      errorMsg.innerHTML = '⚠ 動画を読み込めませんでした<br><span style="font-size:11px">' + errMsg + '</span>';
+      if (errCode === 4) {
+        errorMsg.innerHTML =
+          '⚠ ' + errMsg + '<br>' +
+          '<span style="font-size:11px">MP4/H.264形式でも、長時間動画・大容量動画・一部のMP4構造では再生できない場合があります。</span><br><br>' +
+          '<span style="font-size:11px; text-align:left; display:block">' +
+          '・別のMP4で試してみてください<br>' +
+          '・Microsoft Edgeで直接このファイルを開いて再生できるか確認してください<br>' +
+          '・再生できない場合は管理者またはDX担当へご相談ください' +
+          '</span>';
+      } else {
+        errorMsg.innerHTML = '⚠ 動画を読み込めませんでした<br><span style="font-size:11px">' + errMsg + '</span>';
+      }
       sendMsg({ type: 'error', msg: errMsg });
     });
 

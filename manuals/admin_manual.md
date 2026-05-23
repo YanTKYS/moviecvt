@@ -132,13 +132,49 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 | `MovieConverter.exe` が「ブロックされている」状態でないか | ファイルのプロパティ→「ブロックの解除」チェックを確認 |
 | Windowsイベントログにエラーがあるか | イベントビューアの「Windowsログ→アプリケーション」を確認 |
 
-### 8-2. 動画プレビューが表示されない
+### 8-2. 動画プレビューが表示されない / 再生できない
 
 | 確認事項 | 対応 |
 |----------|------|
 | WebView2 Runtime がインストールされているか | コントロールパネル→プログラムで「Microsoft Edge WebView2 Runtime」を確認 |
 | `Assets\player.html` が存在するか | 配布パッケージに含まれているか確認 |
 | WebView2 のユーザーデータフォルダが破損していないか | `%TEMP%\MovieConverter_WebView2\` を削除して再起動する |
+
+#### MP4/AVC(H.264) なのにプレビューできない場合（v0.1.2追記）
+
+MP4/AVC/H.264/AACの動画であっても、WebView2のHTML videoで再生できない場合があります。
+AVC非対応ではなく、以下の原因が考えられます。
+
+- 長時間動画（1時間超）・大容量動画（1GiB超）での読み込み失敗
+- MP4のmoov atomが末尾に配置されている（faststart未対応）
+- WebView2 Runtime版やEdge側のバッファリング制約
+
+**切り分け手順:**
+
+**Step 1 — Microsoft Edge での直接再生確認**
+
+対象MP4をEdgeのウィンドウにドラッグ＆ドロップして再生できるか確認する。
+
+- Edge で再生できない → 動画ファイル自体に問題がある可能性が高い
+- Edge で再生できる → WebView2プレビュー方式との相性問題、または下記を試す
+
+**Step 2 — 30秒サンプルで確認**
+
+```bash
+ffmpeg -ss 00:10:00 -t 00:00:30 -i input.mp4 -c copy sample_30sec.mp4
+```
+
+サンプルで再生できる場合 → 長さ・容量が原因の可能性あり
+
+**Step 3 — faststart 化で確認**
+
+```bash
+ffmpeg -i input.mp4 -c copy -movflags +faststart output_faststart.mp4
+```
+
+faststart化後に再生できる場合 → moov atomの末尾配置が原因だった
+
+**v0.1.2 の対応範囲:** 案内・切り分け手順の整備のみ。自動faststart化はv0.2.0以降の検討事項。
 
 ### 8-3. 変換に失敗する
 
@@ -167,4 +203,4 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ---
 
-*作成: 2026-05-23  更新: 2026-05-23  バージョン: v0.1.1*
+*作成: 2026-05-23  更新: 2026-05-23  バージョン: v0.1.2*

@@ -582,7 +582,8 @@ namespace MovieConverter
                         string msg = root.TryGetProperty("msg", out var mp)
                             ? mp.GetString() ?? "不明なエラー"
                             : "不明なエラー";
-                        AppendLog($"[プレイヤー エラー] {msg}");
+                        AppendLog($"[プレイヤー エラー] プレビューで再生できませんでした。");
+                        AppendLog($"  詳細: {msg}");
                         OnVideoPlayerError(msg);
                         break;
                 }
@@ -715,7 +716,10 @@ namespace MovieConverter
             UpdateConvertButton();
 
             SetStatus("状態: 動画の読み込みに失敗しました", Color.OrangeRed);
-            AppendLog("  ヒント: ファイルが破損していないか、別の動画で試してみてください。");
+            AppendLog("確認方法:");
+            AppendLog("  1. Microsoft EdgeでこのMP4を直接開いて再生できるか確認してください。");
+            AppendLog("  2. 長時間動画の場合、30秒程度のサンプルで確認してください。");
+            AppendLog("  3. MP4の構造によっては faststart 化で改善する場合があります。");
         }
 
         // ─── 再生コントロール ─────────────────────────────────────────
