@@ -4,7 +4,7 @@
 #   GitHub 公式 actions の最新 @v4 パッチ版は Node 22 対応済み。
 #   サードパーティ actions は使用せず gh CLI で代替することで Node 依存を最小化。
 
-name: Build
+name: CI Build
 
 on:
   push:
@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    name: Build (Release)
+    name: CI Build (Release config)
     runs-on: windows-latest
 
     steps:
