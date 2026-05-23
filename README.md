@@ -1,6 +1,6 @@
 # 動画簡易変換ツール
 
-> **バージョン: v0.1.0（試作版・検証版）**
+> **バージョン: v0.1.1（試作版・検証版）**
 >
 > 本バージョンは試作版です。本番利用の前に動作確認・ライセンス確認を行ってください。
 
@@ -139,6 +139,7 @@ MovieConverter/
 
 | バージョン | 日付 | 内容 |
 |-----------|------|------|
+| v0.1.1 | 2026-05-23 | コードレビュー修正・ドキュメント整備（実機確認準備版） |
 | v0.1.0 | 2026-05-23 | 初期試作版：MP4の切り出し・サイズ縮小機能 |
 
 ---
@@ -146,6 +147,30 @@ MovieConverter/
 ## 動作確認方法
 
 `docs/test_scenarios.md` のテストシナリオに従って確認してください。
+
+---
+
+---
+
+## ビルド方法
+
+```bash
+cd src/MovieConverter
+dotnet restore
+dotnet build -c Release
+```
+
+**セルフコンテインド単一ファイル発行（推奨）:**
+
+```bash
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish/
+```
+
+セルフコンテインド発行では、`publish/` に `MovieConverter.exe` が生成されます。
+この場合、.NET 8 Desktop Runtime のインストールが不要になります。
+
+> **注意:** ビルドには Windows 環境（またはWindowsDesktop SDK）が必要です。
+> Linux 環境では `net8.0-windows` (WinForms) のビルドはできません。
 
 ---
 
