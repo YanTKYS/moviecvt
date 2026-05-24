@@ -1,3 +1,32 @@
+## v0.1.4
+### Title
+動画簡易変換ツール v0.1.4 — 全体変換モード追加・D&D修正・プレビュー音量追加
+
+### Note
+### 変更内容
+
+#### 全体変換モードの追加
+
+- **`ConversionSettings.cs`**: `ConversionMode`（RangeOnly/FullVideo）を追加
+- **`FfmpegRunner.cs`**: `FullVideo` 時は `-ss`/`-to` を付加しない
+- **`MainForm.cs`**: 「選択範囲を変換」/「動画全体を変換」ラジオボタンを追加。FullVideo時は開始・終了位置の指定が不要。FullVideo + FastCut 選択時は自動的に「標準」に切り替わる
+
+#### D&D時の挙動修正
+
+- **`MainForm.cs`**: `CoreWebView2.NavigationStarting` でMP4ファイルへのナビゲーションをインターセプト・キャンセルして `LoadFile()` へリダイレクト。WebView2にD&Dしてもブラウザ内再生されなくなる
+
+#### プレビュー音量スライダー追加
+
+- **`MainForm.cs`**: 音量スライダー（TrackBar）と消音ボタンをプレビューコントロールバーに追加（出力動画の音量は変更しない）
+- **`player.html`**: `volume`/`mute` コマンドを追加
+
+#### 変換時間に関するドキュメント整理
+
+- 高速カット（-c copy）と圧縮変換（libx264）の速度差の理由を docs に記載
+- `-preset fast`/`veryfast`、プログレスバーをv0.1.5以降の候補として記録
+
+---
+
 ## v0.1.3
 ### Title
 動画簡易変換ツール v0.1.3 — 高速カット追加・ffmpeg DLL配置手順追記

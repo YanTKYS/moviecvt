@@ -2,6 +2,12 @@ using System;
 
 namespace MovieConverter
 {
+    public enum ConversionMode
+    {
+        RangeOnly,  // 選択範囲を変換
+        FullVideo   // 動画全体を変換
+    }
+
     public enum QualityPreset
     {
         FastCut,      // しない（高速カット）
@@ -24,5 +30,6 @@ namespace MovieConverter
         public TimeSpan EndTime { get; set; }
         public QualityPreset Quality { get; set; } = QualityPreset.Standard;
         public ResolutionPreset Resolution { get; set; } = ResolutionPreset.P720;
+        public ConversionMode Mode { get; set; } = ConversionMode.RangeOnly;
     }
 }

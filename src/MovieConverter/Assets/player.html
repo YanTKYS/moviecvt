@@ -240,6 +240,16 @@
             }
           }
           break;
+
+        case 'volume':
+          if (typeof msg.v === 'number') {
+            video.volume = Math.max(0, Math.min(1, msg.v));
+          }
+          break;
+
+        case 'mute':
+          video.muted = !!msg.on;
+          break;
       }
     });
   </script>
