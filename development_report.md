@@ -3,14 +3,61 @@
 | 項目 | 内容 |
 |------|------|
 | ツール名 | 動画簡易変換ツール |
-| バージョン | v0.1.3 |
+| バージョン | v0.1.5 |
 | 初回作成日 | 2026-05-23 |
 | v0.1.1更新日 | 2026-05-23 |
 | v0.1.2更新日 | 2026-05-23 |
 | v0.1.3更新日 | 2026-05-24 |
 | v0.1.4更新日 | 2026-05-24 |
+| v0.1.5更新日 | 2026-05-24 |
 | 参照ガイド | reference/guide_context.md（同梱方式） |
 | GitHub Pages | 403エラーにより参照不可 — guide_context.md で代替 |
+
+---
+
+## v0.1.5 確認・修正記録
+
+### v0.1.5 対応内容
+
+#### 背景・発端
+
+v0.1.4 実利用フィードバックとして以下が報告された。
+
+1. 圧縮変換や長時間動画の変換中に「終わる気配がない」と感じる
+2. 変換ログに ffmpeg の生出力が混在し、一般職員に分かりにくい
+
+#### 実施した変更
+
+| # | 変更対象 | 内容 |
+|---|----------|------|
+| 1 | `FfmpegRunner.cs` | `RunAsync` に `totalDurationSeconds`・`progressCallback` パラメータを追加 |
+| 2 | `FfmpegRunner.cs` | `TryParseProgressTime` メソッドを追加。ffmpeg stderr の `time=HH:MM:SS.ss` を正規表現でパースし、進捗率（0.0〜1.0）をコールバックに通知 |
+| 3 | `FfmpegRunner.cs` | 進捗行（`time=` 含む）はコールバック呼び出し後に logCallback をスキップ。`[実行] ffmpeg args` の行を削除（MainForm 側でユーザー向け情報を既にログ出力しているため冗長） |
+| 4 | `MainForm.cs` | `ProgressBar`（pbProgress）を変換パネル上部に追加（行高: 48→82px）。変換開始時はマーキー表示、進捗取得後は 0〜100% の確定表示に切り替え |
+| 5 | `MainForm.cs` | `System.Windows.Forms.Timer`（1秒間隔）で経過時間を計測。ステータスラベルに「状態: 変換中... 経過時間 HH:MM:SS  N%」を表示 |
+| 6 | `MainForm.cs` | 完了ログに所要時間を追加（`所要時間: HH:MM:SS`） |
+| 7 | `MainForm.cs` | `ConversionLogCallback` を追加。`[` で始まるタグ付き行のみ txtLog に表示、ffmpeg 生出力はバッファ（`_ffmpegOutputBuffer`）に蓄積 |
+| 8 | `MainForm.cs` | 変換失敗時のみ `_ffmpegOutputBuffer` を txtLog にダンプして管理者が確認できるようにする |
+| 9 | `MainForm.cs` | `StopConversionTimer` ヘルパーを追加。完了・キャンセル・例外いずれの終了経路でもタイマー停止・プログレスバー非表示を確実に実行 |
+| 10 | `MovieConverter.csproj` | バージョンを 0.1.5.0 / v0.1.5 に更新 |
+
+#### 設計判断
+
+| 判断事項 | 内容 |
+|---------|------|
+| ffmpeg生出力のフィルタ基準 | `[` で始まる行のみ表示する規約。自前ログは全て `[種別] メッセージ` 形式で出力するため、ffmpeg の生出力（`frame=...`、`Input #0, ...` 等）と確実に区別できる |
+| プログレスバーの初期状態をマーキーにする | `-c copy`（高速カット）では `time=` が出力されない場合があり、確定表示できない。マーキー→確定の一方向切り替えで両ケースを自然にカバーする |
+| totalDurationSeconds の渡し方 | FullVideo の場合は `_duration`（動画全体時間）、RangeOnly の場合は `endSeconds - startSeconds`（指定範囲）を渡す。ffmpeg の出力する time= は常に入力の先頭からの絶対時間ではなく変換済み出力時間を示すため、この方針で正しく計算できる |
+| 経過時間タイマーに WinForms Timer を使用 | Tick イベントが UI スレッドで発火するため `InvokeRequired` 不要。BackgroundWorker/Task より実装がシンプル |
+| ffmpegバッファを StringBuilder + lock で管理 | ErrorDataReceived はバックグラウンドスレッドから呼ばれるため競合防止に lock が必要 |
+
+#### 対応しなかった内容
+
+| 項目 | 理由・方針 |
+|------|-----------|
+| `-preset fast`/`veryfast` 追加 | v0.1.5の範囲外。要望があればv0.1.6以降で追加 |
+| ハードウェアエンコード（h264_nvenc等） | 環境依存が大きく初期版では対象外 |
+| 変換の残り時間（ETA）表示 | ffmpegのspeed値から計算可能だが精度が低いため保留 |
 
 ---
 
