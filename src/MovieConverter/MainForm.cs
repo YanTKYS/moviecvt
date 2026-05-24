@@ -21,7 +21,7 @@ namespace MovieConverter
         // 動画プレビュープレイヤー（WebView2 標準方式）
         // v0.3.1 で追加した WPF MediaElement 代替方式は v0.3.2 で起動安定性のため無効化
         private WebView2VideoPlayer _webView2Player = null!;
-        private IVideoPlayer _player = null!
+        private IVideoPlayer _player = null!;
 
         private Panel pnlSeek = null!;
         private Label lblCurrentTime = null!;
