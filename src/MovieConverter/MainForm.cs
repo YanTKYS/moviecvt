@@ -51,6 +51,7 @@ namespace MovieConverter
         private ComboBox cmbResolution = null!;
 
         private Panel pnlConvert = null!;
+        private ProgressBar pbProgress = null!;
         private Button btnConvert = null!;
         private Button btnCancel = null!;
         private Label lblStatus = null!;
@@ -71,6 +72,10 @@ namespace MovieConverter
         private string? _pendingLoadAfterNav; // フォールバック再ナビゲーション後に読み込むファイル
         private CancellationTokenSource? _cancelSource;
         private readonly FfmpegRunner _ffmpeg = new();
+        private System.Windows.Forms.Timer? _elapsedTimer;
+        private DateTime _conversionStart;
+        private readonly StringBuilder _ffmpegOutputBuffer = new();
+        private readonly object _bufferLock = new();
 
         // ─── コンストラクタ ──────────────────────────────────────────
         public MainForm()
@@ -86,7 +91,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.1.4";
+            Text = "動画簡易変換ツール  v0.1.5";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -108,7 +113,7 @@ namespace MovieConverter
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));    // 3: playback buttons
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));   // 4: cut position
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90));    // 5: settings
-            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));    // 6: convert
+            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));    // 6: convert + progress bar
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));   // 7: log
 
             // ── Row 0: ファイル選択 ──
@@ -407,14 +412,26 @@ namespace MovieConverter
             });
             tableLayout.Controls.Add(pnlSettings, 0, 5);
 
-            // ── Row 6: 変換実行 ──
+            // ── Row 6: 進捗バー + 変換実行 ──
             pnlConvert = CreateSectionPanel();
             pnlConvert.Padding = new Padding(4, 4, 4, 4);
+
+            pbProgress = new ProgressBar
+            {
+                Location = new Point(4, 4),
+                Size = new Size(750, 14),
+                Minimum = 0,
+                Maximum = 100,
+                Value = 0,
+                Style = ProgressBarStyle.Marquee,
+                MarqueeAnimationSpeed = 30,
+                Visible = false
+            };
 
             btnConvert = new Button
             {
                 Text = "変換実行",
-                Location = new Point(4, 8),
+                Location = new Point(4, 26),
                 Size = new Size(110, 32),
                 UseVisualStyleBackColor = true,
                 Font = new Font("Meiryo UI", 9f, FontStyle.Bold),
@@ -425,7 +442,7 @@ namespace MovieConverter
             btnCancel = new Button
             {
                 Text = "キャンセル",
-                Location = new Point(124, 8),
+                Location = new Point(124, 26),
                 Size = new Size(90, 32),
                 UseVisualStyleBackColor = true,
                 Enabled = false
@@ -435,12 +452,12 @@ namespace MovieConverter
             lblStatus = new Label
             {
                 Text = "状態: 待機中",
-                Location = new Point(228, 13),
+                Location = new Point(228, 31),
                 Size = new Size(500, 22),
                 ForeColor = Color.FromArgb(60, 60, 60)
             };
 
-            pnlConvert.Controls.AddRange(new Control[] { btnConvert, btnCancel, lblStatus });
+            pnlConvert.Controls.AddRange(new Control[] { pbProgress, btnConvert, btnCancel, lblStatus });
             tableLayout.Controls.Add(pnlConvert, 0, 6);
 
             // ── Row 7: ログ ──
@@ -1014,20 +1031,39 @@ namespace MovieConverter
 
             SetConvertingState(true);
             txtLog.Clear();
+            lock (_bufferLock) _ffmpegOutputBuffer.Clear();
+
             AppendLog($"[変換開始] {DateTime.Now:yyyy/MM/dd HH:mm:ss}");
             AppendLog($"  入力: {settings.InputFile}");
             AppendLog($"  変換範囲: {(isFullVideo ? "動画全体" : $"{SecondsToHms(_startSeconds!.Value)} 〜 {SecondsToHms(_endSeconds!.Value)}")}");
             if (settings.Quality == QualityPreset.FastCut)
-            {
                 AppendLog("  出力方式: 高速カット（再エンコードなし）");
-            }
             else
             {
                 AppendLog("  出力方式: 圧縮変換（再エンコードあり）");
                 AppendLog($"  品質: {cmbQuality.Text} / 解像度: {cmbResolution.Text}");
             }
             AppendLog($"  出力: {outputFile}");
-            SetStatus("状態: 変換中...", Color.FromArgb(0, 120, 200));
+            AppendLog("変換中です。しばらくお待ちください。");
+            if (settings.Quality != QualityPreset.FastCut)
+                AppendLog("長時間動画や圧縮変換では時間がかかります。");
+
+            // 経過時間タイマー起動
+            _conversionStart = DateTime.Now;
+            _elapsedTimer?.Dispose();
+            _elapsedTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+            _elapsedTimer.Tick += ElapsedTimer_Tick;
+            _elapsedTimer.Start();
+
+            // プログレスバー表示（進捗が取得できるまでマーキー）
+            pbProgress.Style = ProgressBarStyle.Marquee;
+            pbProgress.Value = 0;
+            pbProgress.Visible = true;
+            SetStatus("状態: 変換中... 経過時間 00:00:00", Color.FromArgb(0, 120, 200));
+
+            double totalDuration = isFullVideo
+                ? _duration
+                : (_endSeconds!.Value - _startSeconds!.Value);
 
             _cancelSource = new CancellationTokenSource();
             var ct = _cancelSource.Token;
@@ -1037,12 +1073,15 @@ namespace MovieConverter
                 await _ffmpeg.RunAsync(
                     settings,
                     outputFile,
+                    totalDuration,
                     ct,
-                    log => AppendLogSafe(log),
+                    ConversionLogCallback,
+                    OnConversionProgress,
                     (success, exitCode) => OnConversionCompleted(success, exitCode, outputFile));
             }
             catch (FileNotFoundException ex)
             {
+                StopConversionTimer();
                 _cancelSource?.Dispose();
                 _cancelSource = null;
                 AppendLog($"[エラー] {ex.Message}");
@@ -1052,12 +1091,57 @@ namespace MovieConverter
             }
             catch (Exception ex)
             {
+                StopConversionTimer();
                 _cancelSource?.Dispose();
                 _cancelSource = null;
                 AppendLog($"[予期しないエラー] {ex.Message}");
                 SetStatus("状態: エラー", Color.OrangeRed);
                 SetConvertingState(false);
             }
+        }
+
+        private void ConversionLogCallback(string line)
+        {
+            // 先頭が "[" の行は自前のタグ付きメッセージ（利用者向け）→ ログ表示
+            // それ以外は ffmpeg の生出力 → バッファに蓄積のみ（失敗時にダンプ）
+            if (line.StartsWith("[", StringComparison.Ordinal))
+                AppendLogSafe(line);
+            else
+                lock (_bufferLock)
+                    _ffmpegOutputBuffer.AppendLine(line);
+        }
+
+        private void OnConversionProgress(double ratio)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => OnConversionProgress(ratio)));
+                return;
+            }
+            int percent = Math.Max(0, Math.Min(100, (int)(ratio * 100)));
+            if (pbProgress.Style != ProgressBarStyle.Continuous)
+                pbProgress.Style = ProgressBarStyle.Continuous;
+            if (percent > pbProgress.Value)
+                pbProgress.Value = percent;
+        }
+
+        private void ElapsedTimer_Tick(object? sender, EventArgs e)
+        {
+            var elapsed = DateTime.Now - _conversionStart;
+            string t = $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
+            string progress = pbProgress.Style == ProgressBarStyle.Continuous
+                ? $"  {pbProgress.Value}%"
+                : "";
+            SetStatus($"状態: 変換中... 経過時間 {t}{progress}", Color.FromArgb(0, 120, 200));
+        }
+
+        private void StopConversionTimer()
+        {
+            _elapsedTimer?.Stop();
+            _elapsedTimer?.Dispose();
+            _elapsedTimer = null;
+            pbProgress.Visible = false;
+            pbProgress.Value = 0;
         }
 
         private bool ValidateBeforeConvert()
@@ -1100,6 +1184,7 @@ namespace MovieConverter
                 return;
             }
 
+            StopConversionTimer();
             _cancelSource?.Dispose();
             _cancelSource = null;
             SetConvertingState(false);
@@ -1110,7 +1195,6 @@ namespace MovieConverter
                 AppendLog("[キャンセル] 変換をキャンセルしました。");
                 SetStatus("状態: キャンセルされました", Color.FromArgb(100, 100, 100));
 
-                // 不完全な出力ファイルを削除
                 try
                 {
                     if (File.Exists(outputFile)) File.Delete(outputFile);
@@ -1122,7 +1206,9 @@ namespace MovieConverter
             if (success && File.Exists(outputFile))
             {
                 var fi = new FileInfo(outputFile);
-                AppendLog($"[完了] 変換成功 — {DateTime.Now:HH:mm:ss}");
+                var elapsed = DateTime.Now - _conversionStart;
+                string elapsedStr = $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
+                AppendLog($"[完了] 変換成功 — {DateTime.Now:HH:mm:ss}  所要時間: {elapsedStr}");
                 AppendLog($"  出力ファイル: {fi.FullName}");
                 AppendLog($"  出力サイズ: {FormatFileSize(fi.Length)}");
                 SetStatus($"状態: 変換完了  出力サイズ: {FormatFileSize(fi.Length)}",
@@ -1139,7 +1225,15 @@ namespace MovieConverter
             else
             {
                 AppendLog($"[失敗] 変換に失敗しました（終了コード: {exitCode}）。");
-                AppendLog("  上記のログを確認してください。");
+                // 詳細ログ（ffmpeg 生出力）をダンプして管理者が確認できるようにする
+                string buf;
+                lock (_bufferLock) buf = _ffmpegOutputBuffer.ToString();
+                if (!string.IsNullOrWhiteSpace(buf))
+                {
+                    AppendLog("[詳細ログ]");
+                    foreach (string l in buf.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                        AppendLog("  " + l.TrimEnd('\r'));
+                }
                 SetStatus("状態: 変換に失敗しました", Color.OrangeRed);
 
                 // 不完全な出力ファイルを削除

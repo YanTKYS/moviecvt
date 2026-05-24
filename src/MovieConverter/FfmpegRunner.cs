@@ -1,17 +1,32 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace MovieConverter
 {
-    /// <summary>
-    /// ffmpeg.exe を外部プロセスとして呼び出し、動画変換を実行する。
-    /// </summary>
     public class FfmpegRunner
     {
+        // ffmpegの進捗出力例: "frame=  120 fps=25 q=28.0 size=1024kB time=00:01:23.45 bitrate=..."
+        private static readonly Regex TimePattern =
+            new Regex(@"time=(\d+):(\d+):(\d+\.\d+)", RegexOptions.Compiled);
+
+        private static bool TryParseProgressTime(string line, out double seconds)
+        {
+            seconds = 0;
+            var m = TimePattern.Match(line);
+            if (!m.Success) return false;
+            int h = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+            int mi = int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture);
+            double s = double.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture);
+            seconds = h * 3600 + mi * 60 + s;
+            return true;
+        }
+
         private static readonly string FfmpegRelativePath =
             Path.Combine("bin", "ffmpeg", "ffmpeg.exe");
 
@@ -108,19 +123,15 @@ namespace MovieConverter
             return sb.ToString();
         }
 
-        /// <summary>
-        /// 変換を非同期で実行する。
-        /// </summary>
-        /// <param name="settings">変換設定</param>
-        /// <param name="outputFile">出力ファイルパス</param>
-        /// <param name="ct">キャンセルトークン</param>
-        /// <param name="logCallback">ログ出力コールバック（バックグラウンドスレッドから呼ばれる場合あり）</param>
-        /// <param name="completedCallback">完了時コールバック。success, exitCode（キャンセル時はnull）</param>
+        /// <param name="totalDurationSeconds">進捗計算に使う総秒数（範囲変換なら範囲長、全体変換なら動画時間）</param>
+        /// <param name="progressCallback">進捗コールバック（0.0〜1.0）。バックグラウンドスレッドから呼ばれる。</param>
         public async Task RunAsync(
             ConversionSettings settings,
             string outputFile,
+            double totalDurationSeconds,
             CancellationToken ct,
             Action<string> logCallback,
+            Action<double>? progressCallback,
             Action<bool, int?> completedCallback)
         {
             if (!IsAvailable)
@@ -128,7 +139,6 @@ namespace MovieConverter
                     $"ffmpeg.exe が見つかりません。\n配置場所: {FfmpegPath}\n\ndocs/ffmpeg_setup.md を参照して配置してください。");
 
             string args = BuildArguments(settings, outputFile);
-            logCallback($"[実行] ffmpeg {args}");
 
             var psi = new ProcessStartInfo
             {
@@ -159,7 +169,16 @@ namespace MovieConverter
             };
             process.ErrorDataReceived += (s, e) =>
             {
-                if (e.Data != null) logCallback(e.Data);
+                if (e.Data == null) return;
+                // 進捗行（time= を含む）は進捗コールバックに渡してlogには送らない
+                if (progressCallback != null &&
+                    TryParseProgressTime(e.Data, out double timeSec) &&
+                    totalDurationSeconds > 0)
+                {
+                    progressCallback(Math.Min(1.0, timeSec / totalDurationSeconds));
+                    return;
+                }
+                logCallback(e.Data);
             };
 
             process.Start();
