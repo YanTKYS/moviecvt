@@ -57,37 +57,46 @@ namespace MovieConverter
         {
             var sb = new StringBuilder();
 
-            // シーク位置を -i の前に指定（再エンコード時の高速シーク）
+            // シーク位置を -i の前に指定（入力前シークで処理を高速化）
             sb.Append($"-ss {FormatTimeForFfmpeg(settings.StartTime)} ");
             sb.Append($"-to {FormatTimeForFfmpeg(settings.EndTime)} ");
 
             // 入力ファイル（スペース・日本語対応のためダブルクォートで囲む）
             sb.Append($"-i \"{settings.InputFile}\" ");
 
-            // 解像度フィルタ
-            switch (settings.Resolution)
+            if (settings.Quality == QualityPreset.FastCut)
             {
-                case ResolutionPreset.P720:
-                    sb.Append("-vf scale=-2:720 ");
-                    break;
-                case ResolutionPreset.P480:
-                    sb.Append("-vf scale=-2:480 ");
-                    break;
-                // Original: フィルタなし
+                // 高速カット: ストリームをそのままコピー（再エンコードなし）
+                // カット位置は直前のキーフレームに丸められる場合がある
+                sb.Append("-c copy ");
             }
-
-            // 品質プリセット（再エンコード方式：カット精度を優先）
-            switch (settings.Quality)
+            else
             {
-                case QualityPreset.HighQuality:
-                    sb.Append("-c:v libx264 -crf 23 -preset medium -c:a aac -b:a 160k ");
-                    break;
-                case QualityPreset.SmallSize:
-                    sb.Append("-c:v libx264 -crf 32 -preset medium -c:a aac -b:a 96k ");
-                    break;
-                default: // Standard
-                    sb.Append("-c:v libx264 -crf 28 -preset medium -c:a aac -b:a 128k ");
-                    break;
+                // 圧縮変換: 解像度フィルタ（FastCut時は無効）
+                switch (settings.Resolution)
+                {
+                    case ResolutionPreset.P720:
+                        sb.Append("-vf scale=-2:720 ");
+                        break;
+                    case ResolutionPreset.P480:
+                        sb.Append("-vf scale=-2:480 ");
+                        break;
+                    // Original: フィルタなし
+                }
+
+                // 品質プリセット（再エンコード方式）
+                switch (settings.Quality)
+                {
+                    case QualityPreset.HighQuality:
+                        sb.Append("-c:v libx264 -crf 23 -preset medium -c:a aac -b:a 160k ");
+                        break;
+                    case QualityPreset.SmallSize:
+                        sb.Append("-c:v libx264 -crf 32 -preset medium -c:a aac -b:a 96k ");
+                        break;
+                    default: // Standard
+                        sb.Append("-c:v libx264 -crf 28 -preset medium -c:a aac -b:a 128k ");
+                        break;
+                }
             }
 
             // 出力ファイル（上書きなし：ファイル名にタイムスタンプを含むため -y は付けない）

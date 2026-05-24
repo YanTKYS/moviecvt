@@ -40,6 +40,7 @@ namespace MovieConverter
         private TextBox txtEndTime = null!;
         private Label lblEndLabel = null!;
         private Label lblRange = null!;
+        private Label lblModeHint = null!;
 
         private Panel pnlSettings = null!;
         private Label lblQualityLabel = null!;
@@ -83,7 +84,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.1.2";
+            Text = "動画簡易変換ツール  v0.1.3";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -104,7 +105,7 @@ namespace MovieConverter
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));    // 2: seek bar
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));    // 3: playback buttons
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));   // 4: cut position
-            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));    // 5: settings
+            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90));    // 5: settings
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));    // 6: convert
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));   // 7: log
 
@@ -325,8 +326,9 @@ namespace MovieConverter
                 Size = new Size(130, 24),
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
-            cmbQuality.Items.AddRange(new object[] { "画質優先", "標準", "容量優先" });
-            cmbQuality.SelectedIndex = 1; // 標準
+            cmbQuality.Items.AddRange(new object[] { "しない（高速カット）", "画質優先", "標準", "容量優先" });
+            cmbQuality.SelectedIndex = 0; // 高速カット
+            cmbQuality.SelectedIndexChanged += CmbQuality_SelectedIndexChanged;
 
             lblResolutionLabel = new Label
             {
@@ -344,6 +346,7 @@ namespace MovieConverter
             };
             cmbResolution.Items.AddRange(new object[] { "元のまま", "720p", "480p" });
             cmbResolution.SelectedIndex = 1; // 720p
+            cmbResolution.Enabled = false; // 初期値が高速カットのため無効
 
             var lblOutputNote = new Label
             {
@@ -354,11 +357,20 @@ namespace MovieConverter
                 TextAlign = ContentAlignment.MiddleLeft
             };
 
+            lblModeHint = new Label
+            {
+                Text = "高速カットは再圧縮しないため高速ですが、開始位置が少しずれる場合があります。",
+                Location = new Point(4, 48),
+                Size = new Size(740, 18),
+                ForeColor = Color.FromArgb(100, 100, 100),
+                Font = new Font("Meiryo UI", 8.5f)
+            };
+
             pnlSettings.Controls.AddRange(new Control[]
             {
                 lblQualityLabel, cmbQuality,
                 lblResolutionLabel, cmbResolution,
-                lblOutputNote
+                lblOutputNote, lblModeHint
             });
             tableLayout.Controls.Add(pnlSettings, 0, 5);
 
@@ -945,7 +957,15 @@ namespace MovieConverter
             AppendLog($"[変換開始] {DateTime.Now:yyyy/MM/dd HH:mm:ss}");
             AppendLog($"  入力: {settings.InputFile}");
             AppendLog($"  範囲: {SecondsToHms(_startSeconds!.Value)} 〜 {SecondsToHms(_endSeconds!.Value)}");
-            AppendLog($"  品質: {cmbQuality.Text} / 解像度: {cmbResolution.Text}");
+            if (settings.Quality == QualityPreset.FastCut)
+            {
+                AppendLog("  出力方式: 高速カット（再エンコードなし）");
+            }
+            else
+            {
+                AppendLog("  出力方式: 圧縮変換（再エンコードあり）");
+                AppendLog($"  品質: {cmbQuality.Text} / 解像度: {cmbResolution.Text}");
+            }
             AppendLog($"  出力: {outputFile}");
             SetStatus("状態: 変換中...", Color.FromArgb(0, 120, 200));
 
@@ -1079,6 +1099,15 @@ namespace MovieConverter
             }
         }
 
+        private void CmbQuality_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            bool isFastCut = cmbQuality.SelectedIndex == 0;
+            cmbResolution.Enabled = !isFastCut;
+            lblModeHint.Text = isFastCut
+                ? "高速カットは再圧縮しないため高速ですが、開始位置が少しずれる場合があります。"
+                : "圧縮して出力する場合は、動画全体を再変換するため時間がかかります。";
+        }
+
         private void BtnCancel_Click(object? sender, EventArgs e)
         {
             _cancelSource?.Cancel();
@@ -1091,7 +1120,7 @@ namespace MovieConverter
             btnConvert.Enabled = !converting && ValidateCanConvertSilent();
             btnCancel.Enabled = converting;
             cmbQuality.Enabled = !converting;
-            cmbResolution.Enabled = !converting;
+            cmbResolution.Enabled = !converting && cmbQuality.SelectedIndex != 0;
             btnBrowse.Enabled = !converting;
             btnSetStart.Enabled = !converting && _videoLoaded;
             btnSetEnd.Enabled = !converting && _videoLoaded;
