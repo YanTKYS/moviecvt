@@ -1,3 +1,45 @@
+## v0.3.2
+### Title
+動画簡易変換ツール v0.3.2 — 起動安定性修正（UseWpf削除・WPF代替プレビュー無効化）
+
+### Note
+### 変更内容
+
+#### 起動クラッシュの修正（主要変更）
+
+v0.3.1 のリリース版が起動直後にクラッシュする問題（`System.DllNotFoundException` in `WindowsBase`）を修正した。
+
+- **`MovieConverter.csproj`**: `<UseWpf>true</UseWpf>` を削除。`WpfMediaElementVideoPlayer.cs` をコンパイル対象から除外（`<Compile Remove=...>`）。バージョン 0.3.1.0 → 0.3.2.0 / v0.3.2
+- **`MainForm.cs`**: デュアルプレイヤー切り替えインフラを削除。`_player = _webView2Player` に一本化。プレビュー方式コンボボックスを削除。代替プレビューへの切り替えダイアログを削除。タイトルを v0.3.2 に更新
+- **`Program.cs`**: 未処理例外ハンドラを追加。`logs/startup_error_{timestamp}.log` に例外情報を記録
+
+#### 起動クラッシュの原因
+
+| 要因 | 内容 |
+|------|------|
+| `<UseWpf>true</UseWpf>` の追加 | WPF ランタイム（WindowsBase.dll 等）の読み込みが必要になった |
+| セルフコンテインド単一ファイル発行 | WPF 依存 DLL が正しく展開されない環境で `DllNotFoundException` が発生 |
+| v0.3.0 では起動成功 | `UseWpf=true` がなく WPF 依存がなかったため起動していた |
+
+#### 無効化した機能
+
+- WPF MediaElement による代替プレビュー方式（v0.3.1 で追加）
+- プレビュー方式切り替えコンボボックス
+- 標準プレビュー失敗時の代替プレビュー案内ダイアログ
+
+> WPF 代替プレビューのコード（`WpfMediaElementVideoPlayer.cs`）はリポジトリに保存されています。
+> 将来のバージョンで単一ファイル発行との相性を確認したうえで再実装予定です。
+
+#### ドキュメント更新
+
+- `README.md`: バージョン v0.3.1 → v0.3.2。プレビュー注意事項から代替プレビュー記述を削除
+- `manuals/admin_manual.md`: 起動時例外ログの確認方法を追加。v0.3.1 代替プレビューの経緯を注記
+- `docs/release_checklist.md`: v0.3.2 起動確認・例外ログ確認チェック項目を追加
+- `docs/test_scenarios.md`: v0.3.2 起動・例外ログ確認テストに更新
+- `development_report.md`: v0.3.2 確認記録（原因分析・対応方針）を追加
+
+---
+
 ## v0.3.1
 ### Title
 動画簡易変換ツール v0.3.1 — 代替プレビュー方式追加（WPF MediaElement）
