@@ -135,7 +135,7 @@ namespace MovieConverter
             };
 
             _player.VideoError += OnVideoPlayerError;
-            _player.FileDropped += LoadFile;
+            _player.FileDropped += path => LoadFile(path);
             _player.LogMessage += AppendLog;
         }
 
