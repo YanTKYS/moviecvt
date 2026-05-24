@@ -1,3 +1,39 @@
+## v0.2.2
+### Title
+動画簡易変換ツール v0.2.2 — IVideoPlayer抽象化・SpeedPreset追加（大規模リファクタリング）
+
+### Note
+### 変更内容
+
+#### IVideoPlayer インターフェース新設（主要変更）
+
+WebView2 固有コードを `MainForm` から完全に分離し、動画プレビュー方式を差し替え可能にするインターフェースを導入した。
+
+- **`IVideoPlayer.cs`**: 新規追加。`PreviewControl`・`IsReady`・`InitializeAsync`・`LoadVideo`・再生コントロール（Play/Pause/Seek/SetVolume/SetMute）・イベント（VideoLoaded/TimeUpdated/PlaybackStarted/PlaybackPaused/PlaybackEnded/PlaybackBlocked/VideoError/FileDropped/LogMessage）を定義
+- **`WebView2VideoPlayer.cs`**: 新規追加。`IVideoPlayer` の WebView2 実装。file-uri 主方式 + virtual-host フォールバック・D&Dインターセプト・WebView2 初期化を内包。`MainForm` から WebView2 固有コードをすべて移管
+- **`MainForm.cs`**: `IVideoPlayer _player` フィールドに統一。`WebView2`・`CoreWebView2` への直接依存をすべて排除。`SubscribePlayerEvents()` でプレイヤーイベントをバインド。`using Microsoft.Web.WebView2.*` 参照を削除
+
+#### SpeedPreset 追加（将来の速度優先プリセット UI への準備）
+
+- **`ConversionSettings.cs`**: `SpeedPreset` enum を追加（`Default` = medium / `Fast` = fast / `VeryFast` = veryfast）。`ConversionSettings` に `Speed` プロパティを追加（デフォルト: `Default`）
+- **`FfmpegRunner.cs`**: `GetPresetName(SpeedPreset)` ヘルパーを追加。`BuildArguments` で ffmpeg `-preset` オプションを `SpeedPreset` から動的に決定（従来は `medium` 固定）
+
+#### 動作仕様
+
+| 項目 | 内容 |
+|------|------|
+| 外部動作変化 | なし（リファクタリングのみ） |
+| 速度プリセット UI | 未実装（v0.3.x で追加予定） |
+| 代替プレビュー方式 | 未実装（IVideoPlayer 実装を追加するだけで差し替え可能） |
+| ffmpeg preset | 現状 SpeedPreset.Default（medium）固定 |
+
+#### バージョン更新
+
+- `MovieConverter.csproj`: バージョン 0.2.1.0 → 0.2.2.0 / v0.2.1 → v0.2.2
+- ウィンドウタイトル: v0.2.1 → v0.2.2
+
+---
+
 ## v0.2.1
 ### Title
 動画簡易変換ツール v0.2.1 — ffprobe 動画情報表示・変換残り時間（ETA）表示
