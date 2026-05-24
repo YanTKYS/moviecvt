@@ -123,6 +123,18 @@ namespace MovieConverter
             return sb.ToString();
         }
 
+        /// <summary>
+        /// faststart化の出力ファイルパスを生成する。
+        /// </summary>
+        public string BuildFaststartOutputPath(string inputFile)
+        {
+            string dir = Path.GetDirectoryName(inputFile) ?? string.Empty;
+            string baseName = Path.GetFileNameWithoutExtension(inputFile);
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string safeName = SanitizeFileName($"{baseName}_faststart_{timestamp}");
+            return Path.Combine(dir, safeName + ".mp4");
+        }
+
         /// <param name="totalDurationSeconds">進捗計算に使う総秒数（範囲変換なら範囲長、全体変換なら動画時間）</param>
         /// <param name="progressCallback">進捗コールバック（0.0〜1.0）。バックグラウンドスレッドから呼ばれる。</param>
         public async Task RunAsync(
@@ -139,7 +151,36 @@ namespace MovieConverter
                     $"ffmpeg.exe が見つかりません。\n配置場所: {FfmpegPath}\n\ndocs/ffmpeg_setup.md を参照して配置してください。");
 
             string args = BuildArguments(settings, outputFile);
+            await RunProcessAsync(args, totalDurationSeconds, ct, logCallback, progressCallback, completedCallback)
+                .ConfigureAwait(false);
+        }
 
+        public async Task RunFaststartAsync(
+            string inputFile,
+            string outputFile,
+            double totalDurationSeconds,
+            CancellationToken ct,
+            Action<string> logCallback,
+            Action<double>? progressCallback,
+            Action<bool, int?> completedCallback)
+        {
+            if (!IsAvailable)
+                throw new FileNotFoundException(
+                    $"ffmpeg.exe が見つかりません。\n配置場所: {FfmpegPath}\n\ndocs/ffmpeg_setup.md を参照して配置してください。");
+
+            string args = $"-i \"{inputFile}\" -c copy -movflags +faststart \"{outputFile}\"";
+            await RunProcessAsync(args, totalDurationSeconds, ct, logCallback, progressCallback, completedCallback)
+                .ConfigureAwait(false);
+        }
+
+        private async Task RunProcessAsync(
+            string args,
+            double totalDurationSeconds,
+            CancellationToken ct,
+            Action<string> logCallback,
+            Action<double>? progressCallback,
+            Action<bool, int?> completedCallback)
+        {
             var psi = new ProcessStartInfo
             {
                 FileName = FfmpegPath,
