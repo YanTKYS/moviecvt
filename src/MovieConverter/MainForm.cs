@@ -144,7 +144,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.2.3";
+            Text = "動画簡易変換ツール  v0.3.0";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -400,7 +400,7 @@ namespace MovieConverter
                 Size = new Size(130, 24),
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
-            cmbQuality.Items.AddRange(new object[] { "しない（高速カット）", "画質優先", "標準", "容量優先" });
+            cmbQuality.Items.AddRange(new object[] { "しない（高速カット）", "速度優先", "画質優先", "標準", "容量優先" });
             cmbQuality.SelectedIndex = 0; // 高速カット
             cmbQuality.SelectedIndexChanged += CmbQuality_SelectedIndexChanged;
 
@@ -1047,6 +1047,11 @@ namespace MovieConverter
             AppendLog($"  変換範囲: {(isFullVideo ? "動画全体" : $"{SecondsToHms(_startSeconds!.Value)} 〜 {SecondsToHms(_endSeconds!.Value)}")}");
             if (settings.Quality == QualityPreset.FastCut)
                 AppendLog("  出力方式: 高速カット（再エンコードなし）");
+            else if (settings.Quality == QualityPreset.SpeedPriority)
+            {
+                AppendLog("  出力方式: 圧縮変換（速度優先）");
+                AppendLog($"  品質: {cmbQuality.Text} / 解像度: {cmbResolution.Text}");
+            }
             else
             {
                 AppendLog("  出力方式: 圧縮変換（再エンコードあり）");
@@ -1284,9 +1289,12 @@ namespace MovieConverter
         {
             bool isFastCut = cmbQuality.SelectedIndex == 0;
             cmbResolution.Enabled = !isFastCut;
-            lblModeHint.Text = isFastCut
-                ? "高速カットは再圧縮しないため高速ですが、開始位置が少しずれる場合があります。"
-                : "圧縮して出力する場合は、動画全体を再変換するため時間がかかります。";
+            lblModeHint.Text = cmbQuality.SelectedIndex switch
+            {
+                0 => "高速カットは再圧縮しないため高速ですが、開始位置が少しずれる場合があります。",
+                1 => "速度優先は、変換時間を短くするための設定です。画質は標準より少し低下する場合があります。",
+                _ => "圧縮して出力する場合は、動画全体を再変換するため時間がかかります。"
+            };
         }
 
         private void BtnCancel_Click(object? sender, EventArgs e)
