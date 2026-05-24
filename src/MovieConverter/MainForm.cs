@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Text;
@@ -57,6 +58,7 @@ namespace MovieConverter
         private Button btnCancel = null!;
         private Label lblStatus = null!;
 
+        private Button btnSaveLog = null!;
         private TextBox txtLog = null!;
 
         // ─── 状態 ────────────────────────────────────────────────────
@@ -147,7 +149,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.3.2";
+            Text = "動画簡易変換ツール  v0.4.0";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -157,7 +159,7 @@ namespace MovieConverter
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 8,
+                RowCount = 9,
                 Padding = new Padding(8),
                 CellBorderStyle = TableLayoutPanelCellBorderStyle.None,
                 BackColor = Color.Transparent
@@ -170,7 +172,8 @@ namespace MovieConverter
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));   // 4: cut position
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90));    // 5: settings
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));    // 6: convert + progress bar
-            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));   // 7: log
+            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));    // 7: log header (save button)
+            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));   // 8: log
 
             // ── Row 0: ファイル選択 ──
             pnlFile = CreateSectionPanel();
@@ -439,7 +442,7 @@ namespace MovieConverter
 
             lblModeHint = new Label
             {
-                Text = "高速カットは再圧縮しないため高速ですが、開始位置が少しずれる場合があります。",
+                Text = "速い。画質は変わりません。開始位置が少しずれる場合があります。",
                 Location = new Point(4, 48),
                 Size = new Size(740, 18),
                 ForeColor = Color.FromArgb(100, 100, 100),
@@ -502,7 +505,28 @@ namespace MovieConverter
             pnlConvert.Controls.AddRange(new Control[] { pbProgress, btnConvert, btnCancel, lblStatus });
             tableLayout.Controls.Add(pnlConvert, 0, 6);
 
-            // ── Row 7: ログ ──
+            // ── Row 7: ログ操作ボタン ──
+            var pnlLogHeader = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 2, 0, 0)
+            };
+
+            btnSaveLog = new Button
+            {
+                Text = "ログを保存",
+                Location = new Point(0, 2),
+                Size = new Size(100, 24),
+                UseVisualStyleBackColor = true,
+                Font = new Font("Meiryo UI", 8.5f)
+            };
+            btnSaveLog.Click += BtnSaveLog_Click;
+
+            pnlLogHeader.Controls.Add(btnSaveLog);
+            tableLayout.Controls.Add(pnlLogHeader, 0, 7);
+
+            // ── Row 8: ログ ──
             txtLog = new TextBox
             {
                 Dock = DockStyle.Fill,
@@ -512,10 +536,10 @@ namespace MovieConverter
                 BackColor = Color.FromArgb(250, 250, 250),
                 ForeColor = Color.FromArgb(40, 40, 40),
                 Font = new Font("Consolas", 8.5f),
-                Margin = new Padding(0, 2, 0, 0),
+                Margin = new Padding(0, 0, 0, 0),
                 WordWrap = false
             };
-            tableLayout.Controls.Add(txtLog, 0, 7);
+            tableLayout.Controls.Add(txtLog, 0, 8);
 
             Controls.Add(tableLayout);
             ResumeLayout(false);
@@ -570,10 +594,15 @@ namespace MovieConverter
         {
             if (!_ffmpeg.IsAvailable)
             {
-                AppendLog("⚠ ffmpeg.exe が見つかりません。");
-                AppendLog($"  配置場所: {_ffmpeg.FfmpegPath}");
-                AppendLog("  docs/ffmpeg_setup.md を参照して配置してください。");
+                AppendLog("⚠ ffmpeg.exe が見つかりません。変換は実行できません。");
+                AppendLog($"  配置先: {_ffmpeg.FfmpegPath}");
+                AppendLog("  → docs/ffmpeg_setup.md を参照して配置してください。");
                 SetStatus("⚠ ffmpeg.exe 未配置 — 変換は実行できません", Color.OrangeRed);
+            }
+            if (!_ffprobe.IsAvailable)
+            {
+                AppendLog("※ ffprobe.exe が見つかりません。動画情報は表示されません（変換は可能）。");
+                AppendLog($"  配置先: {_ffprobe.FfprobePath}");
             }
         }
 
@@ -697,9 +726,9 @@ namespace MovieConverter
 
             // ダイアログでキャンセルされた場合、または再案内不要の場合
             SetStatus("状態: 動画の読み込みに失敗しました", Color.OrangeRed);
-            AppendLog("確認方法:");
-            AppendLog("  1. Microsoft EdgeでこのMP4を直接開いて再生できるか確認してください。");
-            AppendLog("  2. 解決しない場合は管理者またはDX担当に相談してください。");
+            AppendLog("[プレビュー失敗] WebView2 でこの動画を表示できませんでした。");
+            AppendLog("  確認方法: Microsoft Edge に同じ MP4 ファイルをドラッグして再生できるか確認してください。");
+            AppendLog("  解決しない場合は管理者またはDX担当に相談してください。");
         }
 
         private bool ShowPreconvertConsentDialog()
@@ -838,7 +867,7 @@ namespace MovieConverter
 
             if (exitCode == null)
             {
-                AppendLog("[キャンセル] 事前変換をキャンセルしました。");
+                AppendLog("[キャンセル] 事前変換をキャンセルしました。途中ファイルを削除します。");
                 SetStatus("状態: キャンセルされました", Color.FromArgb(100, 100, 100));
                 try { if (File.Exists(outputFile)) File.Delete(outputFile); } catch { }
                 return;
@@ -1195,8 +1224,9 @@ namespace MovieConverter
             }
             if (!_ffmpeg.IsAvailable)
             {
-                ShowUserError("ffmpeg.exe が見つかりません。",
-                    $"配置場所: {_ffmpeg.FfmpegPath}\n\n" +
+                ShowUserError("ffmpeg.exe が見つかりません",
+                    $"変換に必要な ffmpeg.exe が見つかりません。\n\n" +
+                    $"配置先: {_ffmpeg.FfmpegPath}\n\n" +
                     "docs/ffmpeg_setup.md を参照して配置してください。");
                 return false;
             }
@@ -1219,7 +1249,7 @@ namespace MovieConverter
 
             if (exitCode == null)
             {
-                AppendLog("[キャンセル] 変換をキャンセルしました。");
+                AppendLog("[キャンセル] 変換をキャンセルしました。途中ファイルを削除します。");
                 SetStatus("状態: キャンセルされました", Color.FromArgb(100, 100, 100));
                 try { if (File.Exists(outputFile)) File.Delete(outputFile); } catch { }
                 return;
@@ -1236,13 +1266,7 @@ namespace MovieConverter
                 SetStatus($"状態: 変換完了  出力サイズ: {FormatFileSize(fi.Length)}",
                     Color.FromArgb(0, 120, 60));
 
-                MessageBox.Show(
-                    $"変換が完了しました。\n\n" +
-                    $"出力ファイル:\n{fi.FullName}\n\n" +
-                    $"サイズ: {FormatFileSize(fi.Length)}",
-                    "変換完了",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                ShowConversionResultDialog(_inputFile ?? outputFile, outputFile, elapsed);
             }
             else
             {
@@ -1258,12 +1282,11 @@ namespace MovieConverter
                 SetStatus("状態: 変換に失敗しました", Color.OrangeRed);
                 try { if (File.Exists(outputFile)) File.Delete(outputFile); } catch { }
 
+                string diagnosis = DiagnoseConversionError(buf, exitCode);
                 ShowUserError(
-                    "変換に失敗しました。",
-                    "考えられる原因:\n" +
-                    "  ・ 入力ファイルが破損している\n" +
-                    "  ・ 出力先に書き込み権限がない\n" +
-                    "  ・ ディスク容量が不足している\n\n" +
+                    "変換に失敗しました",
+                    diagnosis +
+                    $"\n\n（終了コード: {exitCode}）\n" +
                     "下部のログ欄に詳細が表示されています。");
             }
         }
@@ -1291,9 +1314,12 @@ namespace MovieConverter
             cmbResolution.Enabled = !isFastCut;
             lblModeHint.Text = cmbQuality.SelectedIndex switch
             {
-                0 => "高速カットは再圧縮しないため高速ですが、開始位置が少しずれる場合があります。",
-                1 => "速度優先は、変換時間を短くするための設定です。画質は標準より少し低下する場合があります。",
-                _ => "圧縮して出力する場合は、動画全体を再変換するため時間がかかります。"
+                0 => "速い。画質は変わりません。開始位置が少しずれる場合があります。",
+                1 => "変換時間を短くします。画質は少し下がる場合があります。",
+                2 => "画質を保ちます。容量はあまり小さくならない場合があります。",
+                3 => "迷ったときの設定です。",
+                4 => "容量を小さくします。画質は下がる場合があります。",
+                _ => ""
             };
         }
 
@@ -1431,6 +1457,237 @@ namespace MovieConverter
         private static void ShowUserError(string title, string message)
         {
             MessageBox.Show(message, title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        // ─── 変換結果ダイアログ ───────────────────────────────────────
+        private void ShowConversionResultDialog(string inputFile, string outputFile, TimeSpan elapsed)
+        {
+            long inputSize = 0;
+            long outputSize = 0;
+            try { inputSize = new FileInfo(inputFile).Length; } catch { }
+            try { outputSize = new FileInfo(outputFile).Length; } catch { }
+
+            string elapsedStr = $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
+            string outputDir = Path.GetDirectoryName(outputFile) ?? outputFile;
+            string outputName = Path.GetFileName(outputFile);
+
+            using var dlg = new Form
+            {
+                Text = "変換完了",
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(480, 222),
+                Font = new Font("Meiryo UI", 9f),
+                BackColor = Color.White
+            };
+
+            var lblTitle = new Label
+            {
+                Text = "✓ 変換が完了しました",
+                Location = new Point(16, 16),
+                Size = new Size(440, 24),
+                Font = new Font("Meiryo UI", 10f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(0, 120, 60)
+            };
+
+            var lblOutputName = new Label
+            {
+                Text = $"出力ファイル: {outputName}",
+                Location = new Point(16, 48),
+                Size = new Size(440, 20),
+                AutoEllipsis = true
+            };
+
+            var lblOutputDir = new Label
+            {
+                Text = $"出力先: {outputDir}",
+                Location = new Point(16, 70),
+                Size = new Size(440, 20),
+                ForeColor = Color.FromArgb(80, 80, 80),
+                AutoEllipsis = true
+            };
+
+            var lblBefore = new Label
+            {
+                Text = $"変換前: {FormatFileSize(inputSize)}",
+                Location = new Point(16, 98),
+                Size = new Size(210, 20)
+            };
+
+            var lblAfter = new Label
+            {
+                Text = $"変換後: {FormatFileSize(outputSize)}",
+                Location = new Point(240, 98),
+                Size = new Size(210, 20)
+            };
+
+            string reductionText = "";
+            Color reductionColor = Color.FromArgb(60, 60, 60);
+            if (inputSize > 0 && outputSize > 0)
+            {
+                double ratio = (double)outputSize / inputSize;
+                if (ratio < 1.0)
+                {
+                    reductionText = $"削減率: {(1.0 - ratio) * 100:F0}% 削減";
+                    reductionColor = Color.FromArgb(0, 120, 60);
+                }
+                else
+                {
+                    reductionText = $"削減率: {(ratio - 1.0) * 100:F0}% 増加";
+                    reductionColor = Color.FromArgb(180, 80, 0);
+                }
+            }
+
+            var lblReduction = new Label
+            {
+                Text = reductionText,
+                Location = new Point(16, 120),
+                Size = new Size(210, 20),
+                ForeColor = reductionColor
+            };
+
+            var lblElapsed = new Label
+            {
+                Text = $"処理時間: {elapsedStr}",
+                Location = new Point(240, 120),
+                Size = new Size(210, 20),
+                ForeColor = Color.FromArgb(80, 80, 80)
+            };
+
+            var btnOpenFolder = new Button
+            {
+                Text = "出力フォルダを開く",
+                Location = new Point(16, 158),
+                Size = new Size(140, 30),
+                UseVisualStyleBackColor = true
+            };
+            btnOpenFolder.Click += (s, e) =>
+            {
+                try { Process.Start("explorer.exe", $"\"{outputDir}\""); } catch { }
+            };
+
+            var btnPlay = new Button
+            {
+                Text = "再生",
+                Location = new Point(166, 158),
+                Size = new Size(80, 30),
+                UseVisualStyleBackColor = true
+            };
+            btnPlay.Click += (s, e) =>
+            {
+                try { Process.Start(new ProcessStartInfo(outputFile) { UseShellExecute = true }); } catch { }
+            };
+
+            var btnClose = new Button
+            {
+                Text = "閉じる",
+                DialogResult = DialogResult.OK,
+                Location = new Point(374, 158),
+                Size = new Size(88, 30),
+                UseVisualStyleBackColor = true
+            };
+
+            dlg.AcceptButton = btnClose;
+            dlg.Controls.AddRange(new Control[]
+            {
+                lblTitle, lblOutputName, lblOutputDir,
+                lblBefore, lblAfter, lblReduction, lblElapsed,
+                btnOpenFolder, btnPlay, btnClose
+            });
+            dlg.ShowDialog(this);
+        }
+
+        // ─── エラー診断 ───────────────────────────────────────────────
+        private static string DiagnoseConversionError(string ffmpegLog, int? exitCode)
+        {
+            // DLL 不足 (0xC0000135 = STATUS_DLL_NOT_FOUND, 0xC000007B = STATUS_INVALID_IMAGE_FORMAT)
+            if (exitCode == unchecked((int)0xC0000135) || exitCode == unchecked((int)0xC000007B))
+                return "ffmpeg の DLL ファイルが不足している可能性があります。\n" +
+                       "bin\\ffmpeg\\ フォルダに DLL 一式が揃っているか確認してください。\n" +
+                       "（例: avcodec-*.dll、avformat-*.dll 等）\n\n" +
+                       "詳細は docs/ffmpeg_setup.md を参照してください。";
+
+            string log = ffmpegLog.ToLowerInvariant();
+
+            if (log.Contains("permission denied") || log.Contains("access is denied") ||
+                log.Contains("open failed"))
+                return "出力先フォルダへの書き込みが拒否されました。\n" +
+                       "ファイルが他のアプリで開かれていないか、フォルダへの書き込み権限があるか確認してください。";
+
+            if (log.Contains("no space left") || log.Contains("not enough space") ||
+                log.Contains("disk full"))
+                return "ディスクの空き容量が不足している可能性があります。\n" +
+                       "出力先ドライブの空き容量を確認してから再試行してください。";
+
+            if (log.Contains("invalid data found") || log.Contains("moov atom not found") ||
+                log.Contains("could not find codec parameters"))
+                return "入力ファイルが破損しているか、再生できない形式の可能性があります。\n" +
+                       "別のファイルで試すか、管理者に相談してください。";
+
+            if (log.Contains("no such file or directory") || log.Contains("no such file"))
+                return "入力ファイルが見つかりませんでした。\n" +
+                       "ファイルが移動・削除されていないか確認してください。";
+
+            return "入力ファイルの破損、出力先への書き込み権限、またはディスク容量不足の可能性があります。\n" +
+                   "ログ欄の詳細を確認するか、管理者またはDX担当に相談してください。";
+        }
+
+        // ─── ログ保存 ─────────────────────────────────────────────────
+        private void BtnSaveLog_Click(object? sender, EventArgs e)
+        {
+            string logContent = txtLog.Text;
+            if (string.IsNullOrWhiteSpace(logContent))
+            {
+                MessageBox.Show("保存するログがありません。", "ログ保存",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string fileName = $"movieconverter_log_{timestamp}.txt";
+
+            // 保存先: 入力ファイルのフォルダ優先、なければ exe 隣の logs フォルダ
+            string saveDir;
+            if (!string.IsNullOrEmpty(_inputFile))
+            {
+                string? dir = Path.GetDirectoryName(_inputFile);
+                saveDir = string.IsNullOrEmpty(dir) ? GetLogsDir() : dir;
+            }
+            else
+            {
+                saveDir = GetLogsDir();
+            }
+
+            string savePath = Path.Combine(saveDir, fileName);
+            try
+            {
+                File.WriteAllText(savePath, logContent, Encoding.UTF8);
+                AppendLog($"[ログ保存] {savePath}");
+                SetStatus($"状態: ログを保存しました — {fileName}", Color.FromArgb(0, 120, 60));
+
+                if (MessageBox.Show(
+                        $"ログを保存しました。\n\n{savePath}\n\nフォルダを開きますか？",
+                        "ログ保存完了",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Information) == DialogResult.Yes)
+                {
+                    try { Process.Start("explorer.exe", $"\"{saveDir}\""); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowUserError("ログの保存に失敗しました", $"保存先: {savePath}\n\n{ex.Message}");
+            }
+        }
+
+        private string GetLogsDir()
+        {
+            string appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+            string logsDir = Path.Combine(appDir, "logs");
+            Directory.CreateDirectory(logsDir);
+            return logsDir;
         }
 
         // ─── フォームクローズ ──────────────────────────────────────────
