@@ -8,8 +8,62 @@
 | v0.1.1更新日 | 2026-05-23 |
 | v0.1.2更新日 | 2026-05-23 |
 | v0.1.3更新日 | 2026-05-24 |
+| v0.1.4更新日 | 2026-05-24 |
 | 参照ガイド | reference/guide_context.md（同梱方式） |
 | GitHub Pages | 403エラーにより参照不可 — guide_context.md で代替 |
+
+---
+
+## v0.1.4 確認・修正記録
+
+### v0.1.4 対応内容
+
+#### 背景・発端
+
+実利用フィードバックとして以下が報告された。
+
+1. 画質変換したいだけなのに開始・終了位置指定が必須で操作ステップが多い
+2. D&DしたらWebView2内でブラウザ再生され、アプリ内プレビューに反映されない
+3. プレビュー音量が調整できない
+4. 圧縮変換が遅い（対応方針の整理を行う）
+
+#### 実施した変更
+
+| # | 変更対象 | 内容 |
+|---|----------|------|
+| 1 | `ConversionSettings.cs` | `ConversionMode` 列挙型（`RangeOnly`/`FullVideo`）を追加。`ConversionSettings` に `Mode` プロパティを追加 |
+| 2 | `FfmpegRunner.cs` | `Mode == FullVideo` 時は `-ss`/`-to` をコマンドに付加しない |
+| 3 | `MainForm.cs` | `rbtRangeOnly`/`rbtFullVideo` ラジオボタンを pnlCut 上部に追加（row高さ108→140） |
+| 4 | `MainForm.cs` | `RbtConversionMode_CheckedChanged`: FullVideo時はカット位置UI無効化、FastCut選択中なら標準に切替 |
+| 5 | `MainForm.cs` | `UpdateConvertButton`/`ValidateCanConvertSilent`/`ValidateBeforeConvert` を FullVideo対応に更新（開始・終了不要） |
+| 6 | `MainForm.cs` | `trkVolume`/`btnMute` を pnlPlayback 右端に追加。`TrkVolume_Scroll`/`BtnMute_Click` ハンドラを実装 |
+| 7 | `MainForm.cs` | `OnWebView2NavigationStarting`: WebView2 に `.mp4` をD&Dした際のブラウザナビゲーションをキャンセルして `LoadFile()` にリダイレクト |
+| 8 | `Assets/player.html` | `volume`/`mute` コマンド受信ハンドラを追加 |
+| 9 | `MovieConverter.csproj` | バージョンを 0.1.4.0 / v0.1.4 に更新 |
+
+#### 設計判断
+
+| 判断事項 | 内容 |
+|---------|------|
+| D&D修正にオーバーレイパネルを使わない | `NavigationStarting` でMP4ナビゲーションをキャンセルする方式は、WebView2の既存インタラクション（クリック・スクロール）を全く妨げないため採用 |
+| FullVideo + FastCut を自動切替 | `-c copy` + `-i input.mp4` で全体コピーは有効なコマンドだが「動画全体を変換」の利用意図（圧縮）と合わないため、FullVideo選択時にFastCutを標準へ自動切り替え |
+| 音量はプレビューのみ | 出力動画の音量変更は要件外。スライダー操作はplayer.html側のvideo.volumeを変更するだけで、FFmpegコマンドには影響しない |
+
+#### 変換時間短縮の整理（v0.1.4ドキュメント追記）
+
+| 事項 | 内容 |
+|------|------|
+| `-preset fast`/`veryfast` | libx264の`-preset medium`を変更すれば速くなる（画質はわずかに低下）。v0.1.5以降で導入検討 |
+| 進捗表示 | FFmpegのstderrに出力される`time=...`をパースすれば進捗バーを実装できる。v0.1.5以降の候補 |
+| ハードウェアエンコード | `h264_nvenc`/`h264_qsv`対応。環境依存が大きいため初期版では対象外 |
+
+#### 対応しなかった内容
+
+| 事項 | 理由 |
+|------|------|
+| 変換時間短縮（実装） | v0.1.5以降。-preset変更・プログレスバーは設計整理のみ |
+| 出力動画の音量変更 | 要件外 |
+| 複数ファイル・区間 | 対象外 |
 
 ---
 

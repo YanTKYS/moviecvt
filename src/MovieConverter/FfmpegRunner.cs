@@ -57,9 +57,12 @@ namespace MovieConverter
         {
             var sb = new StringBuilder();
 
-            // シーク位置を -i の前に指定（入力前シークで処理を高速化）
-            sb.Append($"-ss {FormatTimeForFfmpeg(settings.StartTime)} ");
-            sb.Append($"-to {FormatTimeForFfmpeg(settings.EndTime)} ");
+            // 選択範囲変換のみ -ss/-to を付ける（全体変換時はパラメータなし）
+            if (settings.Mode == ConversionMode.RangeOnly)
+            {
+                sb.Append($"-ss {FormatTimeForFfmpeg(settings.StartTime)} ");
+                sb.Append($"-to {FormatTimeForFfmpeg(settings.EndTime)} ");
+            }
 
             // 入力ファイル（スペース・日本語対応のためダブルクォートで囲む）
             sb.Append($"-i \"{settings.InputFile}\" ");

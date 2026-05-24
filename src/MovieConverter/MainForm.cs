@@ -31,8 +31,12 @@ namespace MovieConverter
         private Button btnBack5 = null!;
         private Button btnPlayPause = null!;
         private Button btnForward5 = null!;
+        private TrackBar trkVolume = null!;
+        private Button btnMute = null!;
 
         private Panel pnlCut = null!;
+        private RadioButton rbtRangeOnly = null!;
+        private RadioButton rbtFullVideo = null!;
         private Button btnSetStart = null!;
         private TextBox txtStartTime = null!;
         private Label lblStartLabel = null!;
@@ -84,7 +88,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.1.3";
+            Text = "動画簡易変換ツール  v0.1.4";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -104,7 +108,7 @@ namespace MovieConverter
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));   // 1: preview
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));    // 2: seek bar
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));    // 3: playback buttons
-            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));   // 4: cut position
+            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 140));   // 4: cut position
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90));    // 5: settings
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));    // 6: convert
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));   // 7: log
@@ -227,17 +231,65 @@ namespace MovieConverter
             btnForward5 = CreatePlayButton("5秒進む ▶", 490, 8);
             btnForward5.Click += (s, e) => SeekRelative(5.0);
 
-            pnlPlayback.Controls.AddRange(new Control[] { btnBack5, btnPlayPause, btnForward5 });
+            var lblVolume = new Label
+            {
+                Text = "音量:",
+                Location = new Point(618, 12),
+                Size = new Size(40, 22),
+                TextAlign = ContentAlignment.MiddleRight,
+                ForeColor = Color.FromArgb(60, 60, 60)
+            };
+
+            trkVolume = new TrackBar
+            {
+                Location = new Point(660, 4),
+                Size = new Size(100, 30),
+                Minimum = 0,
+                Maximum = 100,
+                Value = 80,
+                TickStyle = TickStyle.None,
+                Enabled = false
+            };
+            trkVolume.Scroll += TrkVolume_Scroll;
+
+            btnMute = new Button
+            {
+                Text = "消音",
+                Location = new Point(764, 8),
+                Size = new Size(44, 28),
+                UseVisualStyleBackColor = true,
+                Enabled = false
+            };
+            btnMute.Click += BtnMute_Click;
+
+            pnlPlayback.Controls.AddRange(new Control[] { btnBack5, btnPlayPause, btnForward5, lblVolume, trkVolume, btnMute });
             tableLayout.Controls.Add(pnlPlayback, 0, 3);
 
-            // ── Row 4: カット位置 ──
+            // ── Row 4: 変換モード + カット位置 ──
             pnlCut = CreateSectionPanel();
             pnlCut.Padding = new Padding(4, 4, 4, 4);
+
+            rbtRangeOnly = new RadioButton
+            {
+                Text = "選択範囲を変換",
+                Location = new Point(4, 8),
+                Size = new Size(140, 22),
+                Checked = true
+            };
+            rbtRangeOnly.CheckedChanged += RbtConversionMode_CheckedChanged;
+
+            rbtFullVideo = new RadioButton
+            {
+                Text = "動画全体を変換",
+                Location = new Point(156, 8),
+                Size = new Size(140, 22)
+            };
+            rbtFullVideo.CheckedChanged += RbtConversionMode_CheckedChanged;
 
             btnSetStart = new Button
             {
                 Text = "現在位置を開始に設定",
-                Location = new Point(4, 8),
+                Location = new Point(4, 40),
                 Size = new Size(160, 28),
                 UseVisualStyleBackColor = true,
                 Enabled = false
@@ -247,14 +299,14 @@ namespace MovieConverter
             lblStartLabel = new Label
             {
                 Text = "開始位置:",
-                Location = new Point(174, 13),
+                Location = new Point(174, 45),
                 Size = new Size(60, 20),
                 TextAlign = ContentAlignment.MiddleRight
             };
 
             txtStartTime = new TextBox
             {
-                Location = new Point(238, 11),
+                Location = new Point(238, 43),
                 Size = new Size(90, 24),
                 Text = "--:--:--",
                 TextAlign = HorizontalAlignment.Center,
@@ -265,7 +317,7 @@ namespace MovieConverter
             btnSetEnd = new Button
             {
                 Text = "現在位置を終了に設定",
-                Location = new Point(4, 44),
+                Location = new Point(4, 76),
                 Size = new Size(160, 28),
                 UseVisualStyleBackColor = true,
                 Enabled = false
@@ -275,14 +327,14 @@ namespace MovieConverter
             lblEndLabel = new Label
             {
                 Text = "終了位置:",
-                Location = new Point(174, 49),
+                Location = new Point(174, 81),
                 Size = new Size(60, 20),
                 TextAlign = ContentAlignment.MiddleRight
             };
 
             txtEndTime = new TextBox
             {
-                Location = new Point(238, 47),
+                Location = new Point(238, 79),
                 Size = new Size(90, 24),
                 Text = "--:--:--",
                 TextAlign = HorizontalAlignment.Center,
@@ -293,8 +345,8 @@ namespace MovieConverter
             lblRange = new Label
             {
                 Text = "指定範囲: --",
-                Location = new Point(338, 28),
-                Size = new Size(240, 28),
+                Location = new Point(338, 60),
+                Size = new Size(260, 28),
                 Font = new Font("Meiryo UI", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(0, 100, 160),
                 TextAlign = ContentAlignment.MiddleLeft
@@ -302,6 +354,7 @@ namespace MovieConverter
 
             pnlCut.Controls.AddRange(new Control[]
             {
+                rbtRangeOnly, rbtFullVideo,
                 btnSetStart, lblStartLabel, txtStartTime,
                 btnSetEnd, lblEndLabel, txtEndTime,
                 lblRange
@@ -523,8 +576,9 @@ namespace MovieConverter
                     ?? AppContext.BaseDirectory;
 
                 webView2.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-                // フォールバック（virtual-host方式）の再ナビゲーション完了後に動画を読み込む
                 webView2.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+                // D&DでMP4を直接WebView2にドロップした場合、ブラウザ内再生ではなくアプリ側で読み込む
+                webView2.CoreWebView2.NavigationStarting += OnWebView2NavigationStarting;
 
                 // 主方式: file:// URI で player.html を直接ロード
                 // → 動画も file:// URI で読み込むため、CORS制約なしで大容量ファイルを扱える
@@ -750,10 +804,14 @@ namespace MovieConverter
             btnPlayPause.Enabled = true;
             btnBack5.Enabled = true;
             btnForward5.Enabled = true;
-            btnSetStart.Enabled = true;
-            btnSetEnd.Enabled = true;
-            txtStartTime.Enabled = true;
-            txtEndTime.Enabled = true;
+            trkVolume.Enabled = true;
+            btnMute.Enabled = true;
+
+            bool inRangeMode = rbtRangeOnly.Checked;
+            btnSetStart.Enabled = inRangeMode;
+            btnSetEnd.Enabled = inRangeMode;
+            txtStartTime.Enabled = inRangeMode;
+            txtEndTime.Enabled = inRangeMode;
 
             AppendLog($"[読み込み完了] 動画時間: {SecondsToHms(_duration)}");
             UpdateConvertButton();
@@ -782,6 +840,8 @@ namespace MovieConverter
             btnPlayPause.Enabled = false;
             btnBack5.Enabled = false;
             btnForward5.Enabled = false;
+            trkVolume.Enabled = false;
+            btnMute.Enabled = false;
             btnSetStart.Enabled = false;
             btnSetEnd.Enabled = false;
             txtStartTime.Enabled = false;
@@ -918,15 +978,18 @@ namespace MovieConverter
         // ─── 変換実行 ────────────────────────────────────────────────
         private void UpdateConvertButton()
         {
-            bool canConvert =
-                !string.IsNullOrEmpty(_inputFile) &&
-                File.Exists(_inputFile) &&
-                _startSeconds.HasValue &&
-                _endSeconds.HasValue &&
-                _endSeconds.Value > _startSeconds.Value &&
-                _ffmpeg.IsAvailable;
-
-            btnConvert.Enabled = canConvert;
+            if (!_ffmpeg.IsAvailable ||
+                string.IsNullOrEmpty(_inputFile) ||
+                !File.Exists(_inputFile))
+            {
+                btnConvert.Enabled = false;
+                return;
+            }
+            btnConvert.Enabled = rbtFullVideo.Checked
+                ? true
+                : (_startSeconds.HasValue &&
+                   _endSeconds.HasValue &&
+                   _endSeconds.Value > _startSeconds.Value);
         }
 
         private async void BtnConvert_Click(object? sender, EventArgs e)
@@ -943,20 +1006,22 @@ namespace MovieConverter
                 return;
             }
 
+            bool isFullVideo = rbtFullVideo.Checked;
             var settings = new ConversionSettings
             {
                 InputFile = _inputFile!,
-                StartTime = TimeSpan.FromSeconds(_startSeconds!.Value),
-                EndTime = TimeSpan.FromSeconds(_endSeconds!.Value),
+                StartTime = _startSeconds.HasValue ? TimeSpan.FromSeconds(_startSeconds.Value) : TimeSpan.Zero,
+                EndTime = _endSeconds.HasValue ? TimeSpan.FromSeconds(_endSeconds.Value) : TimeSpan.Zero,
                 Quality = (QualityPreset)cmbQuality.SelectedIndex,
-                Resolution = (ResolutionPreset)cmbResolution.SelectedIndex
+                Resolution = (ResolutionPreset)cmbResolution.SelectedIndex,
+                Mode = isFullVideo ? ConversionMode.FullVideo : ConversionMode.RangeOnly
             };
 
             SetConvertingState(true);
             txtLog.Clear();
             AppendLog($"[変換開始] {DateTime.Now:yyyy/MM/dd HH:mm:ss}");
             AppendLog($"  入力: {settings.InputFile}");
-            AppendLog($"  範囲: {SecondsToHms(_startSeconds!.Value)} 〜 {SecondsToHms(_endSeconds!.Value)}");
+            AppendLog($"  変換範囲: {(isFullVideo ? "動画全体" : $"{SecondsToHms(_startSeconds!.Value)} 〜 {SecondsToHms(_endSeconds!.Value)}")}");
             if (settings.Quality == QualityPreset.FastCut)
             {
                 AppendLog("  出力方式: 高速カット（再エンコードなし）");
@@ -1008,18 +1073,21 @@ namespace MovieConverter
                     "ファイルを再度選択してください。");
                 return false;
             }
-            if (!_startSeconds.HasValue || !_endSeconds.HasValue)
+            if (rbtRangeOnly.Checked)
             {
-                ShowUserError("開始位置と終了位置を設定してください。",
-                    "「現在位置を開始に設定」「現在位置を終了に設定」ボタンを押して\n" +
-                    "変換したい範囲を指定してから実行してください。");
-                return false;
-            }
-            if (_endSeconds.Value <= _startSeconds.Value)
-            {
-                ShowUserError("終了位置が開始位置以前です。",
-                    "終了位置は開始位置より後に設定してください。");
-                return false;
+                if (!_startSeconds.HasValue || !_endSeconds.HasValue)
+                {
+                    ShowUserError("開始位置と終了位置を設定してください。",
+                        "「現在位置を開始に設定」「現在位置を終了に設定」ボタンを押して\n" +
+                        "変換したい範囲を指定してから実行してください。");
+                    return false;
+                }
+                if (_endSeconds.Value <= _startSeconds.Value)
+                {
+                    ShowUserError("終了位置が開始位置以前です。",
+                        "終了位置は開始位置より後に設定してください。");
+                    return false;
+                }
             }
             if (!_ffmpeg.IsAvailable)
             {
@@ -1099,6 +1167,60 @@ namespace MovieConverter
             }
         }
 
+        private void RbtConversionMode_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (!rbtRangeOnly.Checked && !rbtFullVideo.Checked) return;
+            bool isFullVideo = rbtFullVideo.Checked;
+
+            // 動画全体モード時: 高速カット（-c copy）は「全体コピー」になり意味が変わるため標準に切り替える
+            if (isFullVideo && cmbQuality.SelectedIndex == 0)
+                cmbQuality.SelectedIndex = 2; // 標準
+
+            // カット位置UIの有効/無効
+            bool rangeEnabled = !isFullVideo && _videoLoaded;
+            btnSetStart.Enabled = rangeEnabled;
+            btnSetEnd.Enabled = rangeEnabled;
+            txtStartTime.Enabled = rangeEnabled;
+            txtEndTime.Enabled = rangeEnabled;
+
+            UpdateConvertButton();
+        }
+
+        private void TrkVolume_Scroll(object? sender, EventArgs e)
+        {
+            double vol = trkVolume.Value / 100.0;
+            SendToPlayer($"{{\"cmd\":\"volume\",\"v\":{vol:F2}}}");
+            // ミュートを解除してスライダー操作を優先
+            if (trkVolume.Value > 0)
+            {
+                btnMute.Text = "消音";
+                SendToPlayer("{\"cmd\":\"mute\",\"on\":false}");
+            }
+        }
+
+        private void BtnMute_Click(object? sender, EventArgs e)
+        {
+            bool nowMuted = btnMute.Text == "消音";
+            btnMute.Text = nowMuted ? "音有" : "消音";
+            SendToPlayer($"{{\"cmd\":\"mute\",\"on\":{(nowMuted ? "true" : "false")}}}");
+        }
+
+        private void OnWebView2NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            if (!e.Uri.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return;
+            try
+            {
+                string localPath = new Uri(e.Uri).LocalPath;
+                if (Path.GetExtension(localPath).ToLowerInvariant() == ".mp4")
+                {
+                    // D&DでMP4をWebView2に直接ドロップした場合: ブラウザ内再生をキャンセルしてアプリ側で読み込む
+                    e.Cancel = true;
+                    LoadFile(localPath);
+                }
+            }
+            catch { /* URI パース失敗は無視 */ }
+        }
+
         private void CmbQuality_SelectedIndexChanged(object? sender, EventArgs e)
         {
             bool isFastCut = cmbQuality.SelectedIndex == 0;
@@ -1122,21 +1244,25 @@ namespace MovieConverter
             cmbQuality.Enabled = !converting;
             cmbResolution.Enabled = !converting && cmbQuality.SelectedIndex != 0;
             btnBrowse.Enabled = !converting;
-            btnSetStart.Enabled = !converting && _videoLoaded;
-            btnSetEnd.Enabled = !converting && _videoLoaded;
-            txtStartTime.Enabled = !converting && _videoLoaded;
-            txtEndTime.Enabled = !converting && _videoLoaded;
+            rbtRangeOnly.Enabled = !converting;
+            rbtFullVideo.Enabled = !converting;
+            bool rangeEnabled = !converting && _videoLoaded && rbtRangeOnly.Checked;
+            btnSetStart.Enabled = rangeEnabled;
+            btnSetEnd.Enabled = rangeEnabled;
+            txtStartTime.Enabled = rangeEnabled;
+            txtEndTime.Enabled = rangeEnabled;
         }
 
         private bool ValidateCanConvertSilent()
         {
-            return
-                !string.IsNullOrEmpty(_inputFile) &&
-                File.Exists(_inputFile) &&
-                _startSeconds.HasValue &&
-                _endSeconds.HasValue &&
-                _endSeconds.Value > _startSeconds.Value &&
-                _ffmpeg.IsAvailable;
+            if (!_ffmpeg.IsAvailable ||
+                string.IsNullOrEmpty(_inputFile) ||
+                !File.Exists(_inputFile))
+                return false;
+            if (rbtFullVideo.Checked) return true;
+            return _startSeconds.HasValue &&
+                   _endSeconds.HasValue &&
+                   _endSeconds.Value > _startSeconds.Value;
         }
 
         // ─── ログ・ステータス ─────────────────────────────────────────
