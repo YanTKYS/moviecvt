@@ -31,7 +31,9 @@ namespace MovieConverter
         public event Action?                  PlaybackStarted;
         public event Action?                  PlaybackPaused;
         public event Action?                  PlaybackEnded;
-        public event Action?                  PlaybackBlocked;
+#pragma warning disable CS0067
+        public event Action?                  PlaybackBlocked; // WPF MediaElement に相当するブロックイベントなし
+#pragma warning restore CS0067
         public event Action<string>?          VideoError;
         public event Action<string>?          FileDropped;
         public event Action<string>?          LogMessage;
@@ -160,7 +162,7 @@ namespace MovieConverter
             VideoLoaded?.Invoke(_duration);
         }
 
-        private void OnMediaFailed(object sender, System.Windows.ExceptionRoutedEventArgs e)
+        private void OnMediaFailed(object? sender, System.Windows.ExceptionRoutedEventArgs e)
         {
             _positionTimer.Stop();
             _loadingOnly = false;
