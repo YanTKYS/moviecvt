@@ -584,6 +584,16 @@ namespace MovieConverter
                         UpdatePlayPauseButton();
                         break;
 
+                    case "play-blocked":
+                        // WebView2 の自動再生制限: 読み込みは成功している
+                        // フォールバックしない。プレイヤー内のオーバーレイボタンで再生を促す
+                        _isPlaying = false;
+                        UpdatePlayPauseButton();
+                        AppendLog("[再生] 自動再生制限のため再生できませんでした。プレイヤー内の ▶ ボタンを押して再生してください。");
+                        SetStatus("状態: プレイヤー内の ▶ ボタンを押して再生してください",
+                            Color.FromArgb(60, 60, 60));
+                        break;
+
                     case "error":
                         string msg = root.TryGetProperty("msg", out var mp)
                             ? mp.GetString() ?? "不明なエラー"
