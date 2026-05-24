@@ -1,3 +1,55 @@
+## v0.3.1
+### Title
+動画簡易変換ツール v0.3.1 — 代替プレビュー方式追加（WPF MediaElement）
+
+### Note
+### 変更内容
+
+#### 代替プレビュー方式の追加（主要変更）
+
+標準プレビュー（WebView2）が再生できない場合のフォールバックとして、WPF MediaElement を使った代替プレビュー方式を追加した。
+
+- **`WpfMediaElementVideoPlayer.cs`**: 新規追加。`IVideoPlayer` の WPF MediaElement 実装。ElementHost で WinForms に埋め込む。`_loadingOnly` パターンで読み込みトリガーの Play/Pause を UI に伝播しない。WinForms Timer 250ms で再生位置をポーリング
+- **`MovieConverter.csproj`**: `<UseWpf>true</UseWpf>` を追加。バージョン 0.3.0.0 → 0.3.1.0 / v0.3.0 → v0.3.1
+- **`MainForm.cs`**: 代替プレビュー対応の複数変更
+  - `_webView2Player`・`_wpfPlayer`・`_previewContainer`・`cmbPlayerMode`・`_switchingPlayer`・`_playerVersion` フィールドを追加
+  - `SubscribePlayerEvents()` にバージョンガード（`_playerVersion` 比較）を実装
+  - `SwitchToPlayer()` で `_previewContainer` のコントロールを差し替え
+  - `OnVideoPlayerError` で標準プレビュー失敗時に YesNo ダイアログを表示
+  - 画面右上に「プレビュー方式:」コンボボックスを追加（「標準」「代替」）
+  - `SetConvertingState` で `cmbPlayerMode.Enabled` を制御
+
+#### 代替プレビューの仕様
+
+| 項目 | 内容 |
+|------|------|
+| 標準プレビュー | WebView2 + HTML5 video（継続） |
+| 代替プレビュー | WPF MediaElement + ElementHost |
+| 切り替えトリガー | 標準プレビュー失敗時の YesNo ダイアログ（自動切り替えなし） |
+| 手動切り替え | 画面右上「プレビュー方式:」コンボボックスで手動切り替え可 |
+| 変換への影響 | なし（変換は ffmpeg.exe を直接呼び出す） |
+
+#### フォールバックフロー
+
+```
+標準プレビュー失敗
+  → 「代替プレビューで開き直しますか？」（YesNo）
+    → Yes: 代替プレビューで再読み込み
+    → No（または代替プレビューも失敗）: 事前変換ダイアログ（既存）
+```
+
+#### ドキュメント更新
+
+- `README.md`: 代替プレビュー方式の説明追加・バージョン v0.3.0 → v0.3.1
+- `manuals/user_manual.md`: ステップ 2-B「プレビュー方式の切り替え」を追加
+- `manuals/admin_manual.md`: 代替プレビューの技術詳細・ログ確認方法を追加
+- `docs/tool_design.md`: セクション 4.12（代替プレビュー設計方針）を追加。4.2 の比較表を更新
+- `docs/test_scenarios.md`: セクション 17（代替プレビューテスト項目）を追加
+- `docs/release_checklist.md`: 代替プレビュー関連チェック項目を追加
+- `development_report.md`: v0.3.1 確認・修正記録を追加
+
+---
+
 ## v0.3.0
 ### Title
 動画簡易変換ツール v0.3.0 — 速度優先プリセット追加
