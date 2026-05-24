@@ -152,6 +152,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
+          # 同タグのリリース・タグが既存の場合は削除してから再作成
+          gh release delete "${{ inputs.tag }}" --yes --cleanup-tag 2>/dev/null || true
           gh release create "${{ inputs.tag }}" \
             --title "${{ steps.notes.outputs.title }}" \
             --notes-file release_body.md \
