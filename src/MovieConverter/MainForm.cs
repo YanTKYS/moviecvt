@@ -1,13 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.WinForms;
 
 namespace MovieConverter
 {
@@ -20,9 +18,8 @@ namespace MovieConverter
         private Label lblFileSize = null!;
         private Label lblVideoInfo = null!;
 
-        private Panel pnlPreview = null!;
-        private WebView2 webView2 = null!;
-        private Label lblPreviewHint = null!;
+        // 動画プレビュープレイヤー（WebView2 実装または将来の代替実装）
+        private IVideoPlayer _player = null!;
 
         private Panel pnlSeek = null!;
         private Label lblCurrentTime = null!;
@@ -68,10 +65,7 @@ namespace MovieConverter
         private double? _endSeconds;
         private bool _isPlaying;
         private bool _isSeekBarUpdating;
-        private bool _webView2Ready;
         private bool _videoLoaded;
-        private int _loadAttempt;          // 0 = file-uri（主）, 1 = virtual-host（フォールバック）
-        private string? _pendingLoadAfterNav; // フォールバック再ナビゲーション後に読み込むファイル
         private CancellationTokenSource? _cancelSource;
         private readonly FfmpegRunner _ffmpeg = new();
         private readonly FfprobeRunner _ffprobe = new();
@@ -86,10 +80,63 @@ namespace MovieConverter
         // ─── コンストラクタ ──────────────────────────────────────────
         public MainForm()
         {
+            _player = new WebView2VideoPlayer();
             InitializeComponent();
+            SubscribePlayerEvents();
             SetupDragDrop();
-            _ = InitializeWebView2Async();
+
+            string appDir = Path.GetDirectoryName(Environment.ProcessPath)
+                ?? AppContext.BaseDirectory;
+            _ = _player.InitializeAsync(appDir);
             CheckFfmpegAvailability();
+        }
+
+        // ─── プレイヤーイベント購読 ───────────────────────────────────
+        private void SubscribePlayerEvents()
+        {
+            _player.VideoLoaded += duration =>
+            {
+                _duration = duration;
+                _videoLoaded = true;
+                OnVideoLoaded();
+            };
+
+            _player.TimeUpdated += (currentTime, duration) =>
+            {
+                _currentTime = currentTime;
+                if (duration > 0) _duration = duration;
+                UpdateTimeDisplay();
+            };
+
+            _player.PlaybackStarted += () =>
+            {
+                _isPlaying = true;
+                UpdatePlayPauseButton();
+            };
+
+            _player.PlaybackPaused += () =>
+            {
+                _isPlaying = false;
+                UpdatePlayPauseButton();
+            };
+
+            _player.PlaybackEnded += () =>
+            {
+                _isPlaying = false;
+                UpdatePlayPauseButton();
+            };
+
+            _player.PlaybackBlocked += () =>
+            {
+                _isPlaying = false;
+                UpdatePlayPauseButton();
+                SetStatus("状態: プレイヤー内の ▶ ボタンを押して再生してください",
+                    Color.FromArgb(60, 60, 60));
+            };
+
+            _player.VideoError += OnVideoPlayerError;
+            _player.FileDropped += LoadFile;
+            _player.LogMessage += AppendLog;
         }
 
         // ─── UI 初期化 ───────────────────────────────────────────────
@@ -165,35 +212,8 @@ namespace MovieConverter
             pnlFile.Controls.AddRange(new Control[] { btnBrowse, lblFilePath, lblFileSize, lblVideoInfo });
             tableLayout.Controls.Add(pnlFile, 0, 0);
 
-            // ── Row 1: 動画プレビュー ──
-            pnlPreview = new Panel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(30, 30, 30),
-                Margin = new Padding(0, 2, 0, 2)
-            };
-
-            lblPreviewHint = new Label
-            {
-                Text = "MP4ファイルを選択すると、ここにプレビューが表示されます",
-                ForeColor = Color.FromArgb(150, 150, 150),
-                BackColor = Color.Transparent,
-                Font = new Font("Meiryo UI", 10f),
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Dock = DockStyle.Fill
-            };
-
-            webView2 = new WebView2
-            {
-                Dock = DockStyle.Fill,
-                Visible = false
-            };
-            webView2.CoreWebView2InitializationCompleted += WebView2_InitializationCompleted;
-
-            pnlPreview.Controls.Add(webView2);
-            pnlPreview.Controls.Add(lblPreviewHint);
-            tableLayout.Controls.Add(pnlPreview, 0, 1);
+            // ── Row 1: 動画プレビュー（IVideoPlayer が提供するコントロール） ──
+            tableLayout.Controls.Add(_player.PreviewControl, 0, 1);
 
             // ── Row 2: シークバー ──
             pnlSeek = CreateSectionPanel();
@@ -538,10 +558,10 @@ namespace MovieConverter
             DragEnter += OnDragEnter;
             DragDrop += OnDragDrop;
 
-            // pnlPreview は WebView2 初期化前（lblPreviewHint 表示中）にドロップされた場合に対応
-            pnlPreview.AllowDrop = true;
-            pnlPreview.DragEnter += OnDragEnter;
-            pnlPreview.DragDrop += OnDragDrop;
+            // プレビュー領域へのドロップ（WebView2 初期化前に lblPreviewHint が見える期間含む）
+            _player.PreviewControl.AllowDrop = true;
+            _player.PreviewControl.DragEnter += OnDragEnter;
+            _player.PreviewControl.DragDrop += OnDragDrop;
         }
 
         // ─── FFmpeg 存在確認 ──────────────────────────────────────────
@@ -554,208 +574,6 @@ namespace MovieConverter
                 AppendLog("  docs/ffmpeg_setup.md を参照して配置してください。");
                 SetStatus("⚠ ffmpeg.exe 未配置 — 変換は実行できません", Color.OrangeRed);
             }
-        }
-
-        // ─── WebView2 初期化 ──────────────────────────────────────────
-        private async Task InitializeWebView2Async()
-        {
-            try
-            {
-                string userDataDir = Path.Combine(
-                    Path.GetTempPath(), "MovieConverter_WebView2");
-                var env = await CoreWebView2Environment
-                    .CreateAsync(null, userDataDir)
-                    .ConfigureAwait(true); // UI スレッドに戻る
-
-                await webView2.EnsureCoreWebView2Async(env)
-                    .ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                lblPreviewHint.Text =
-                    "動画プレビューを初期化できませんでした。\n" +
-                    "WebView2ランタイム（Microsoft Edge WebView2 Runtime）が\n" +
-                    "インストールされているか確認してください。";
-                AppendLog($"[WebView2 エラー] {ex.Message}");
-            }
-        }
-
-        private void WebView2_InitializationCompleted(
-            object? sender,
-            CoreWebView2InitializationCompletedEventArgs e)
-        {
-            if (!e.IsSuccess)
-            {
-                AppendLog($"[WebView2 初期化失敗] {e.InitializationException?.Message}");
-                return;
-            }
-
-            try
-            {
-                string appDir = Path.GetDirectoryName(Environment.ProcessPath)
-                    ?? AppContext.BaseDirectory;
-
-                webView2.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-                webView2.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
-                // D&DでMP4をWebView2にドロップした場合: ナビゲーションと新規ウィンドウの両方をキャンセルしてアプリ側で読み込む
-                webView2.CoreWebView2.NavigationStarting += OnWebView2NavigationStarting;
-                webView2.CoreWebView2.NewWindowRequested += OnWebView2NewWindowRequested;
-
-                // 主方式: file:// URI で player.html を直接ロード
-                // → 動画も file:// URI で読み込むため、CORS制約なしで大容量ファイルを扱える
-                string playerPath = Path.Combine(appDir, "Assets", "player.html");
-                webView2.CoreWebView2.Navigate(new Uri(playerPath).AbsoluteUri);
-
-                _webView2Ready = true;
-                webView2.Visible = true;
-                lblPreviewHint.Visible = false;
-                AppendLog("[準備完了] 動画プレビューの初期化に成功しました。（file-uri方式）");
-
-                // 初期化完了前にファイルが選択されていた場合は読み込み直す
-                if (!string.IsNullOrEmpty(_inputFile))
-                {
-                    AppendLog("[再読み込み] 選択済みファイルをプレビューに読み込みます。");
-                    LoadVideoInPlayer(_inputFile);
-                }
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"[WebView2 セットアップ エラー] {ex.Message}");
-            }
-        }
-
-        // ─── WebMessage (JS → C#) ────────────────────────────────────
-        private void OnWebMessageReceived(
-            object? sender,
-            CoreWebView2WebMessageReceivedEventArgs e)
-        {
-            string json = e.TryGetWebMessageAsString();
-            if (string.IsNullOrEmpty(json)) return;
-
-            try
-            {
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-                string type = root.TryGetProperty("type", out var typeProp)
-                    ? typeProp.GetString() ?? ""
-                    : "";
-
-                switch (type)
-                {
-                    case "loaded":
-                        _duration = root.TryGetProperty("d", out var dp)
-                            ? dp.GetDouble() : 0;
-                        string loadedMethod = root.TryGetProperty("method", out var lmp)
-                            ? lmp.GetString() ?? "unknown" : "unknown";
-                        AppendLog($"[読み込み成功] 方式: {loadedMethod}");
-                        _videoLoaded = true;
-                        OnVideoLoaded();
-                        break;
-
-                    case "timeupdate":
-                        if (root.TryGetProperty("t", out var tp))
-                            _currentTime = tp.GetDouble();
-                        if (root.TryGetProperty("d", out var dp2) && dp2.GetDouble() > 0)
-                            _duration = dp2.GetDouble();
-                        UpdateTimeDisplay();
-                        break;
-
-                    case "playing":
-                        _isPlaying = true;
-                        UpdatePlayPauseButton();
-                        break;
-
-                    case "paused":
-                    case "ended":
-                        _isPlaying = false;
-                        UpdatePlayPauseButton();
-                        break;
-
-                    case "play-blocked":
-                        // WebView2 の自動再生制限: 読み込みは成功している
-                        // フォールバックしない。プレイヤー内のオーバーレイボタンで再生を促す
-                        _isPlaying = false;
-                        UpdatePlayPauseButton();
-                        AppendLog("[再生] 自動再生制限のため再生できませんでした。プレイヤー内の ▶ ボタンを押して再生してください。");
-                        SetStatus("状態: プレイヤー内の ▶ ボタンを押して再生してください",
-                            Color.FromArgb(60, 60, 60));
-                        break;
-
-                    case "error":
-                        string msg = root.TryGetProperty("msg", out var mp)
-                            ? mp.GetString() ?? "不明なエラー"
-                            : "不明なエラー";
-                        string errMethod = root.TryGetProperty("method", out var emp)
-                            ? emp.GetString() ?? "unknown" : "unknown";
-                        AppendLog($"[プレイヤー エラー] プレビューで再生できませんでした。（方式: {errMethod}）");
-                        AppendLog($"  詳細: {msg}");
-                        OnVideoPlayerError(msg);
-                        break;
-                }
-            }
-            catch { /* JSON パースエラーは無視 */ }
-        }
-
-        // ─── プレイヤーへのコマンド送信 (C# → JS) ───────────────────
-        private void SendToPlayer(string json)
-        {
-            if (!_webView2Ready) return;
-            try
-            {
-                webView2.CoreWebView2.PostWebMessageAsString(json);
-            }
-            catch { /* WebView2 が破棄されている場合は無視 */ }
-        }
-
-        private void LoadVideoInPlayer(string filePath)
-        {
-            if (!_webView2Ready) return;
-            _loadAttempt = 0;
-            // 主方式: file:// URI — player.html が file:// で動作しているためCORS制約なし
-            string src = new Uri(filePath).AbsoluteUri;
-            AppendLog($"[プレイヤー] file-uri方式で読み込みます");
-            SendToPlayer(
-                $"{{\"cmd\":\"load\",\"src\":\"{EscapeJsonString(src)}\",\"method\":\"file-uri\"}}");
-        }
-
-        private void LoadVideoViaVirtualHost(string filePath)
-        {
-            // フォールバック方式: https://video.local/ 仮想ホスト経由
-            // player.html を app.local に再ナビゲートした後に呼ばれる
-            string? dir = Path.GetDirectoryName(filePath);
-            if (dir == null) return;
-            webView2.CoreWebView2.SetVirtualHostNameToFolderMapping(
-                "video.local", dir,
-                CoreWebView2HostResourceAccessKind.Allow);
-            string fileName = Uri.EscapeDataString(Path.GetFileName(filePath));
-            string src = $"https://video.local/{fileName}";
-            AppendLog($"[フォールバック] virtual-host方式で読み込みます");
-            SendToPlayer(
-                $"{{\"cmd\":\"load\",\"src\":\"{EscapeJsonString(src)}\",\"method\":\"virtual-host\"}}");
-        }
-
-        private void SetupAppLocalVirtualHost()
-        {
-            string appDir = Path.GetDirectoryName(Environment.ProcessPath)
-                ?? AppContext.BaseDirectory;
-            webView2.CoreWebView2.SetVirtualHostNameToFolderMapping(
-                "app.local", appDir,
-                CoreWebView2HostResourceAccessKind.Allow);
-        }
-
-        private void OnNavigationCompleted(
-            object? sender,
-            CoreWebView2NavigationCompletedEventArgs e)
-        {
-            if (!e.IsSuccess || string.IsNullOrEmpty(_pendingLoadAfterNav)) return;
-            string file = _pendingLoadAfterNav;
-            _pendingLoadAfterNav = null;
-            LoadVideoViaVirtualHost(file);
-        }
-
-        private static string EscapeJsonString(string s)
-        {
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
         }
 
         // ─── ファイル選択 ────────────────────────────────────────────
@@ -811,10 +629,7 @@ namespace MovieConverter
             SetStatus("状態: 動画を読み込み中...", Color.FromArgb(60, 60, 60));
             AppendLog($"[読み込み] {fi.FullName} ({FormatFileSize(fi.Length)})");
 
-            if (_webView2Ready)
-                LoadVideoInPlayer(filePath);
-            else
-                AppendLog("[警告] WebView2 未初期化のためプレビューをスキップします。");
+            _player.LoadVideo(filePath);
         }
 
         private void OnVideoLoaded()
@@ -852,19 +667,8 @@ namespace MovieConverter
 
         private void OnVideoPlayerError(string errorMessage)
         {
-            // file-uri方式が失敗した場合 → virtual-host方式にフォールバック
-            if (_loadAttempt == 0 && !string.IsNullOrEmpty(_inputFile))
-            {
-                _loadAttempt = 1;
-                AppendLog("[フォールバック] file-uri方式が失敗しました。virtual-host方式を試みます。");
-                SetStatus("状態: 別の方式で再読み込み中...", Color.FromArgb(60, 60, 60));
-                SetupAppLocalVirtualHost();
-                _pendingLoadAfterNav = _inputFile;
-                webView2.CoreWebView2.Navigate("https://app.local/Assets/player.html");
-                return;
-            }
-
-            // 両方式とも失敗
+            // WebView2VideoPlayer 内でファイル-uri → virtual-host フォールバックは完結済み。
+            // このハンドラは「両方式とも失敗した」場合にのみ呼ばれる。
             _videoLoaded = false;
             btnPlayPause.Enabled = false;
             btnBack5.Enabled = false;
@@ -1077,24 +881,21 @@ namespace MovieConverter
         private void BtnPlayPause_Click(object? sender, EventArgs e)
         {
             if (!_videoLoaded) return;
-            if (_isPlaying)
-                SendToPlayer("{\"cmd\":\"pause\"}");
-            else
-                SendToPlayer("{\"cmd\":\"play\"}");
+            if (_isPlaying) _player.Pause();
+            else            _player.Play();
         }
 
         private void SeekRelative(double delta)
         {
             if (!_videoLoaded) return;
             double newTime = Math.Max(0, Math.Min(_currentTime + delta, _duration));
-            SendToPlayer($"{{\"cmd\":\"seek\",\"t\":{newTime:F3}}}");
+            _player.Seek(newTime);
         }
 
         private void TrkSeek_Scroll(object? sender, EventArgs e)
         {
             if (!_videoLoaded || _isSeekBarUpdating) return;
-            double seekTo = trkSeek.Value;
-            SendToPlayer($"{{\"cmd\":\"seek\",\"t\":{seekTo:F3}}}");
+            _player.Seek(trkSeek.Value);
         }
 
         private void UpdateTimeDisplay()
@@ -1103,7 +904,6 @@ namespace MovieConverter
             if (_duration > 0)
                 lblTotalTime.Text = SecondsToHms(_duration);
 
-            // フィードバックループ防止フラグを立ててからシークバーを更新
             _isSeekBarUpdating = true;
             if (_duration > 0)
             {
@@ -1233,6 +1033,7 @@ namespace MovieConverter
                 Quality = (QualityPreset)cmbQuality.SelectedIndex,
                 Resolution = (ResolutionPreset)cmbResolution.SelectedIndex,
                 Mode = isFullVideo ? ConversionMode.FullVideo : ConversionMode.RangeOnly
+                // Speed: SpeedPreset.Default（将来 UI から選択できるようにする）
             };
 
             _activeOperationLabel = "変換中";
@@ -1256,14 +1057,12 @@ namespace MovieConverter
             if (settings.Quality != QualityPreset.FastCut)
                 AppendLog("長時間動画や圧縮変換では時間がかかります。");
 
-            // 経過時間タイマー起動
             _conversionStart = DateTime.Now;
             _elapsedTimer?.Dispose();
             _elapsedTimer = new System.Windows.Forms.Timer { Interval = 1000 };
             _elapsedTimer.Tick += ElapsedTimer_Tick;
             _elapsedTimer.Start();
 
-            // プログレスバー表示（進捗が取得できるまでマーキー）
             pbProgress.Style = ProgressBarStyle.Marquee;
             pbProgress.Value = 0;
             pbProgress.Visible = true;
@@ -1401,7 +1200,6 @@ namespace MovieConverter
 
         private void OnConversionCompleted(bool success, int? exitCode, string outputFile)
         {
-            // このコールバックはバックグラウンドスレッドから呼ばれる可能性がある
             if (InvokeRequired)
             {
                 Invoke(new Action(() => OnConversionCompleted(success, exitCode, outputFile)));
@@ -1416,15 +1214,9 @@ namespace MovieConverter
 
             if (exitCode == null)
             {
-                // キャンセル
                 AppendLog("[キャンセル] 変換をキャンセルしました。");
                 SetStatus("状態: キャンセルされました", Color.FromArgb(100, 100, 100));
-
-                try
-                {
-                    if (File.Exists(outputFile)) File.Delete(outputFile);
-                }
-                catch { /* 削除失敗は無視 */ }
+                try { if (File.Exists(outputFile)) File.Delete(outputFile); } catch { }
                 return;
             }
 
@@ -1450,7 +1242,6 @@ namespace MovieConverter
             else
             {
                 AppendLog($"[失敗] 変換に失敗しました（終了コード: {exitCode}）。");
-                // 詳細ログ（ffmpeg 生出力）をダンプして管理者が確認できるようにする
                 string buf;
                 lock (_bufferLock) buf = _ffmpegOutputBuffer.ToString();
                 if (!string.IsNullOrWhiteSpace(buf))
@@ -1460,13 +1251,7 @@ namespace MovieConverter
                         AppendLog("  " + l.TrimEnd('\r'));
                 }
                 SetStatus("状態: 変換に失敗しました", Color.OrangeRed);
-
-                // 不完全な出力ファイルを削除
-                try
-                {
-                    if (File.Exists(outputFile)) File.Delete(outputFile);
-                }
-                catch { /* 削除失敗は無視 */ }
+                try { if (File.Exists(outputFile)) File.Delete(outputFile); } catch { }
 
                 ShowUserError(
                     "変換に失敗しました。",
@@ -1480,13 +1265,11 @@ namespace MovieConverter
 
         private void TrkVolume_Scroll(object? sender, EventArgs e)
         {
-            double vol = trkVolume.Value / 100.0;
-            SendToPlayer($"{{\"cmd\":\"volume\",\"v\":{vol:F2}}}");
-            // ミュートを解除してスライダー操作を優先
+            _player.SetVolume(trkVolume.Value / 100.0);
             if (trkVolume.Value > 0)
             {
                 btnMute.Text = "消音";
-                SendToPlayer("{\"cmd\":\"mute\",\"on\":false}");
+                _player.SetMute(false);
             }
         }
 
@@ -1494,38 +1277,7 @@ namespace MovieConverter
         {
             bool nowMuted = btnMute.Text == "消音";
             btnMute.Text = nowMuted ? "音有" : "消音";
-            SendToPlayer($"{{\"cmd\":\"mute\",\"on\":{(nowMuted ? "true" : "false")}}}");
-        }
-
-        private void OnWebView2NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
-        {
-            if (!e.Uri.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return;
-            try
-            {
-                string localPath = new Uri(e.Uri).LocalPath;
-                if (Path.GetExtension(localPath).ToLowerInvariant() == ".mp4")
-                {
-                    e.Cancel = true;
-                    LoadFile(localPath);
-                }
-            }
-            catch { /* URI パース失敗は無視 */ }
-        }
-
-        private void OnWebView2NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
-        {
-            // D&DでMP4をWebView2にドロップすると別ウィンドウで再生しようとする場合をキャンセルしてアプリ側で読み込む
-            e.Handled = true;
-            try
-            {
-                if (e.Uri.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-                {
-                    string localPath = new Uri(e.Uri).LocalPath;
-                    if (Path.GetExtension(localPath).ToLowerInvariant() == ".mp4")
-                        LoadFile(localPath);
-                }
-            }
-            catch { /* URI パース失敗は無視 */ }
+            _player.SetMute(nowMuted);
         }
 
         private void CmbQuality_SelectedIndexChanged(object? sender, EventArgs e)
@@ -1583,7 +1335,7 @@ namespace MovieConverter
                     SetVideoInfoText("動画情報を取得できませんでした", Color.FromArgb(150, 150, 150));
                     return;
                 }
-                var parts = new System.Collections.Generic.List<string>();
+                var parts = new List<string>();
                 if (!string.IsNullOrEmpty(info.Duration))   parts.Add($"長さ: {info.Duration}");
                 if (!string.IsNullOrEmpty(info.Resolution)) parts.Add($"解像度: {info.Resolution}");
                 if (!string.IsNullOrEmpty(info.VideoCodec)) parts.Add($"映像: {info.VideoCodec}");
@@ -1623,7 +1375,6 @@ namespace MovieConverter
 
         private void AppendLogSafe(string message)
         {
-            // バックグラウンドスレッドから呼ばれることを想定
             if (InvokeRequired)
                 Invoke(new Action(() => AppendLog(message)));
             else
@@ -1658,41 +1409,22 @@ namespace MovieConverter
             if (string.IsNullOrWhiteSpace(text)) return false;
             text = text.Trim();
 
-            // HH:mm:ss
             if (TimeSpan.TryParseExact(text, @"hh\:mm\:ss", null, out var ts1))
-            {
-                seconds = ts1.TotalSeconds;
-                return true;
-            }
-            // H:mm:ss
+            { seconds = ts1.TotalSeconds; return true; }
             if (TimeSpan.TryParseExact(text, @"h\:mm\:ss", null, out var ts2))
-            {
-                seconds = ts2.TotalSeconds;
-                return true;
-            }
-            // mm:ss
+            { seconds = ts2.TotalSeconds; return true; }
             if (TimeSpan.TryParseExact(text, @"mm\:ss", null, out var ts3))
-            {
-                seconds = ts3.TotalSeconds;
-                return true;
-            }
-            // 秒数のみ
+            { seconds = ts3.TotalSeconds; return true; }
             if (double.TryParse(text, out double secs) && secs >= 0)
-            {
-                seconds = secs;
-                return true;
-            }
+            { seconds = secs; return true; }
             return false;
         }
 
         private static string FormatFileSize(long bytes)
         {
-            if (bytes >= 1_073_741_824)
-                return $"{bytes / 1_073_741_824.0:F1} GB";
-            if (bytes >= 1_048_576)
-                return $"{bytes / 1_048_576.0:F1} MB";
-            if (bytes >= 1_024)
-                return $"{bytes / 1_024.0:F1} KB";
+            if (bytes >= 1_073_741_824) return $"{bytes / 1_073_741_824.0:F1} GB";
+            if (bytes >= 1_048_576)     return $"{bytes / 1_048_576.0:F1} MB";
+            if (bytes >= 1_024)         return $"{bytes / 1_024.0:F1} KB";
             return $"{bytes} B";
         }
 
