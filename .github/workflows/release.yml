@@ -94,17 +94,16 @@ jobs:
       # 5. リリース ZIP 作成
       #
       #    ZIP 内構造:
-      #      MovieConverter/
-      #        MovieConverter.exe     ← 単体実行可能 (self-contained)
-      #        Assets/
-      #          player.html
-      #        bin/ffmpeg/
-      #          README.txt           ← ffmpeg.exe 配置案内
-      #        docs/
-      #          ffmpeg_setup.md
-      #          license_notice.md
-      #        manuals/
-      #          user_manual.md
+      #      MovieConverter.exe     ← 単体実行可能 (self-contained)
+      #      Assets/
+      #        player.html
+      #      bin/ffmpeg/
+      #        README.txt           ← ffmpeg.exe 配置案内
+      #      docs/
+      #        ffmpeg_setup.md
+      #        license_notice.md
+      #      manuals/
+      #        user_manual.md
       # ────────────────────────────────────────────────
       - name: Create release ZIP
         id: zip
@@ -139,8 +138,8 @@ jobs:
             "入手・配置の手順は docs\ffmpeg_setup.md を参照してください。"
           ) | Set-Content "$root/bin/ffmpeg/README.txt" -Encoding utf8
 
-          # ZIP 圧縮（最適圧縮）
-          Compress-Archive -Path "$root" -DestinationPath $zipOut -CompressionLevel Optimal
+          # ZIP 圧縮（最適圧縮） — $root/* でフォルダ自体を含めず中身だけを圧縮
+          Compress-Archive -Path "$root/*" -DestinationPath $zipOut -CompressionLevel Optimal
           "zip_name=$zipOut" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       # ────────────────────────────────────────────────
