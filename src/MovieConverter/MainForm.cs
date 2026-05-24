@@ -144,7 +144,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.2.2";
+            Text = "動画簡易変換ツール  v0.2.3";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -1112,7 +1112,7 @@ namespace MovieConverter
             // 先頭が "[" の行は自前のタグ付きメッセージ（利用者向け）→ ログ表示
             // それ以外は ffmpeg の生出力 → バッファに蓄積のみ（失敗時にダンプ）
             if (line.StartsWith("[", StringComparison.Ordinal))
-                AppendLogSafe(line);
+                AppendLog(line);
             else
                 lock (_bufferLock)
                     _ffmpegOutputBuffer.AppendLine(line);
@@ -1371,14 +1371,6 @@ namespace MovieConverter
                 return;
             }
             txtLog.AppendText(message + Environment.NewLine);
-        }
-
-        private void AppendLogSafe(string message)
-        {
-            if (InvokeRequired)
-                Invoke(new Action(() => AppendLog(message)));
-            else
-                AppendLog(message);
         }
 
         private void SetStatus(string text, Color color)

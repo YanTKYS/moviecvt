@@ -1,3 +1,42 @@
+## v0.2.3
+### Title
+動画簡易変換ツール v0.2.3 — コードベース確認・軽微修正
+
+### Note
+### 変更内容
+
+#### コードレビューによる軽微修正
+
+v0.2.2 リファクタリング後のコードベース全体を確認し、安全性・保守性・ドキュメント整合性を確認した。
+
+- **`MainForm.cs`**: `AppendLogSafe` メソッドを削除（`AppendLog` と完全に同一の実装で冗長だった。`ConversionLogCallback` の呼び出しを `AppendLog` に変更）
+- **`docs/test_scenarios.md`**: セクション 10-0「全体変換モード」のテスト手順を現行実装に更新（v0.1.4修正コミットでラジオボタン廃止・自動判定方式に変更済みだったが、テスト文書が旧UI前提のまま残っていた）
+
+#### ドキュメント整合
+
+- **`README.md`**: バージョン v0.2.1 → v0.2.3。バージョン履歴に v0.2.1 / v0.2.2 / v0.2.3 を追加
+- **`manuals/user_manual.md`・`manuals/admin_manual.md`**: バージョン v0.2.1 → v0.2.3
+- **`docs/test_scenarios.md`・`docs/release_checklist.md`**: バージョン表記を v0.2.3 に更新
+- **`development_report.md`**: v0.2.2・v0.2.3 の確認・修正記録を追加
+
+#### コードレビュー確認結果（問題なし）
+
+| 確認項目 | 結果 |
+|----------|------|
+| 例外発生時の UI 状態回復 | ✓ 全終了経路で StopConversionTimer → SetConvertingState(false) |
+| キャンセル時の不完全ファイル削除 | ✓ exitCode == null 判定で File.Delete |
+| ffmpeg / ffprobe 未配置時の扱い | ✓ 起動時警告・変換ボタン無効化・動画情報欄の silent skip |
+| 高速カット・事前変換の進捗計算 | ✓ time= 未出力時はマーキー継続。破綻なし |
+| 日本語・空白パス対応 | ✓ ffmpeg 引数ダブルクォート・URI エンコード・SanitizeFileName |
+| ログの利用者向け表現 | ✓ 技術用語の露出なし |
+
+#### バージョン更新
+
+- `MovieConverter.csproj`: バージョン 0.2.2.0 → 0.2.3.0 / v0.2.2 → v0.2.3
+- ウィンドウタイトル: v0.2.2 → v0.2.3
+
+---
+
 ## v0.2.2
 ### Title
 動画簡易変換ツール v0.2.2 — IVideoPlayer抽象化・SpeedPreset追加（大規模リファクタリング）
