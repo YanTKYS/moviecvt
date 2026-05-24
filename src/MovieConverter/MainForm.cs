@@ -18,7 +18,6 @@ namespace MovieConverter
         private Button btnBrowse = null!;
         private Label lblFilePath = null!;
         private Label lblFileSize = null!;
-        private Button btnFaststart = null!;
 
         private Panel pnlPreview = null!;
         private WebView2 webView2 = null!;
@@ -77,6 +76,7 @@ namespace MovieConverter
         private System.Windows.Forms.Timer? _elapsedTimer;
         private DateTime _conversionStart;
         private string _activeOperationLabel = "変換中";
+        private bool _showPreconvertDialog = true;
         private readonly StringBuilder _ffmpegOutputBuffer = new();
         private readonly object _bufferLock = new();
 
@@ -136,7 +136,7 @@ namespace MovieConverter
             {
                 Text = "ファイル: (未選択)",
                 Location = new Point(154, 12),
-                Size = new Size(380, 18),
+                Size = new Size(460, 18),
                 ForeColor = Color.FromArgb(60, 60, 60),
                 AutoEllipsis = true
             };
@@ -145,21 +145,11 @@ namespace MovieConverter
             {
                 Text = "",
                 Location = new Point(154, 32),
-                Size = new Size(380, 18),
+                Size = new Size(460, 18),
                 ForeColor = Color.FromArgb(100, 100, 100)
             };
 
-            btnFaststart = new Button
-            {
-                Text = "MP4を整える",
-                Location = new Point(544, 18),
-                Size = new Size(160, 30),
-                UseVisualStyleBackColor = true,
-                Enabled = false
-            };
-            btnFaststart.Click += BtnFaststart_Click;
-
-            pnlFile.Controls.AddRange(new Control[] { btnBrowse, lblFilePath, lblFileSize, btnFaststart });
+            pnlFile.Controls.AddRange(new Control[] { btnBrowse, lblFilePath, lblFileSize });
             tableLayout.Controls.Add(pnlFile, 0, 0);
 
             // ── Row 1: 動画プレビュー ──
@@ -768,7 +758,7 @@ namespace MovieConverter
                 LoadFile(dlg.FileName);
         }
 
-        private void LoadFile(string filePath)
+        private void LoadFile(string filePath, bool allowPreconvertDialog = true)
         {
             if (!File.Exists(filePath))
             {
@@ -787,6 +777,7 @@ namespace MovieConverter
                 return;
             }
 
+            _showPreconvertDialog = allowPreconvertDialog;
             _inputFile = filePath;
             _videoLoaded = false;
             _startSeconds = null;
@@ -851,15 +842,13 @@ namespace MovieConverter
                 _loadAttempt = 1;
                 AppendLog("[フォールバック] file-uri方式が失敗しました。virtual-host方式を試みます。");
                 SetStatus("状態: 別の方式で再読み込み中...", Color.FromArgb(60, 60, 60));
-                // app.local仮想ホストを設定してからプレイヤーページを再ナビゲート
-                // NavigationCompleted後に LoadVideoViaVirtualHost が呼ばれる
                 SetupAppLocalVirtualHost();
                 _pendingLoadAfterNav = _inputFile;
                 webView2.CoreWebView2.Navigate("https://app.local/Assets/player.html");
                 return;
             }
 
-            // 両方式とも失敗（または単独試行で失敗）
+            // 両方式とも失敗
             _videoLoaded = false;
             btnPlayPause.Enabled = false;
             btnBack5.Enabled = false;
@@ -873,11 +862,198 @@ namespace MovieConverter
             trkSeek.Enabled = false;
             UpdateConvertButton();
 
+            // 事前変換ダイアログを案内する（ユーザー選択ファイルのみ、事前変換後ファイルは再案内しない）
+            if (_showPreconvertDialog && !string.IsNullOrEmpty(_inputFile))
+            {
+                SetStatus("状態: この動画はそのままでは再生できません", Color.FromArgb(180, 100, 0));
+                AppendLog("[プレビュー] この動画はそのままでは再生できません。");
+                if (ShowPreconvertConsentDialog())
+                {
+                    _ = RunPreconvertAsync(_inputFile);
+                    return;
+                }
+            }
+
+            // ダイアログでキャンセルされた場合、または再案内不要の場合
             SetStatus("状態: 動画の読み込みに失敗しました", Color.OrangeRed);
             AppendLog("確認方法:");
             AppendLog("  1. Microsoft EdgeでこのMP4を直接開いて再生できるか確認してください。");
             AppendLog("  2. 長時間動画の場合、30秒程度のサンプルで確認してください。");
-            AppendLog("  3. 「MP4を整える」ボタンを試してみてください。");
+            AppendLog("  3. 解決しない場合は管理者またはDX担当に相談してください。");
+        }
+
+        private bool ShowPreconvertConsentDialog()
+        {
+            using var dlg = new Form
+            {
+                Text = "事前変換の確認",
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(430, 196),
+                Font = new Font("Meiryo UI", 9f),
+                BackColor = Color.White
+            };
+
+            var lbl = new Label
+            {
+                Text = "この動画は、そのままではこの画面で再生できません。\r\n\r\n" +
+                       "動画のカット位置を確認するため、事前変換が必要です。\r\n" +
+                       "元の動画は変更せず、変換後の動画を別ファイルとして作成します。\r\n\r\n" +
+                       "事前変換を実行しますか？",
+                Location = new Point(16, 16),
+                Size = new Size(398, 108),
+                AutoSize = false
+            };
+
+            var btnOk = new Button
+            {
+                Text = "実行する",
+                DialogResult = DialogResult.OK,
+                Location = new Point(220, 148),
+                Size = new Size(90, 30),
+                UseVisualStyleBackColor = true
+            };
+
+            var btnCancel = new Button
+            {
+                Text = "キャンセル",
+                DialogResult = DialogResult.Cancel,
+                Location = new Point(320, 148),
+                Size = new Size(94, 30),
+                UseVisualStyleBackColor = true
+            };
+
+            dlg.AcceptButton = btnOk;
+            dlg.CancelButton = btnCancel;
+            dlg.Controls.AddRange(new Control[] { lbl, btnOk, btnCancel });
+
+            return dlg.ShowDialog(this) == DialogResult.OK;
+        }
+
+        private async Task RunPreconvertAsync(string inputFile)
+        {
+            string outputFile = _ffmpeg.BuildPreconvertedOutputPath(inputFile);
+
+            if (File.Exists(outputFile))
+            {
+                ShowUserError("出力ファイルが既に存在します。",
+                    "しばらく時間をおいてから再実行してください。");
+                SetStatus("状態: 動画の読み込みに失敗しました", Color.OrangeRed);
+                return;
+            }
+
+            _activeOperationLabel = "事前変換中";
+            SetConvertingState(true);
+            lock (_bufferLock) _ffmpegOutputBuffer.Clear();
+
+            AppendLog($"[事前変換開始] {DateTime.Now:yyyy/MM/dd HH:mm:ss}");
+            AppendLog($"  入力: {inputFile}");
+            AppendLog($"  出力: {outputFile}");
+            AppendLog("事前変換中です。大きい動画では時間がかかる場合があります。");
+
+            _conversionStart = DateTime.Now;
+            _elapsedTimer?.Dispose();
+            _elapsedTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+            _elapsedTimer.Tick += ElapsedTimer_Tick;
+            _elapsedTimer.Start();
+
+            pbProgress.Style = ProgressBarStyle.Marquee;
+            pbProgress.Value = 0;
+            pbProgress.Visible = true;
+            SetStatus($"状態: {_activeOperationLabel}... 経過時間 00:00:00", Color.FromArgb(0, 120, 200));
+
+            _cancelSource = new CancellationTokenSource();
+            var ct = _cancelSource.Token;
+
+            try
+            {
+                await _ffmpeg.RunFaststartAsync(
+                    inputFile,
+                    outputFile,
+                    _duration,
+                    ct,
+                    ConversionLogCallback,
+                    OnConversionProgress,
+                    (success, exitCode) => OnPreconvertCompleted(success, exitCode, outputFile));
+            }
+            catch (FileNotFoundException ex)
+            {
+                StopConversionTimer();
+                _cancelSource?.Dispose();
+                _cancelSource = null;
+                _activeOperationLabel = "変換中";
+                AppendLog($"[エラー] {ex.Message}");
+                SetStatus("状態: エラーが発生しました", Color.OrangeRed);
+                ShowUserError("事前変換を開始できませんでした。", ex.Message);
+                SetConvertingState(false);
+            }
+            catch (Exception ex)
+            {
+                StopConversionTimer();
+                _cancelSource?.Dispose();
+                _cancelSource = null;
+                _activeOperationLabel = "変換中";
+                AppendLog($"[予期しないエラー] {ex.Message}");
+                SetStatus("状態: エラー", Color.OrangeRed);
+                SetConvertingState(false);
+            }
+        }
+
+        private void OnPreconvertCompleted(bool success, int? exitCode, string outputFile)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => OnPreconvertCompleted(success, exitCode, outputFile)));
+                return;
+            }
+
+            StopConversionTimer();
+            _cancelSource?.Dispose();
+            _cancelSource = null;
+            _activeOperationLabel = "変換中";
+            SetConvertingState(false);
+
+            if (exitCode == null)
+            {
+                AppendLog("[キャンセル] 事前変換をキャンセルしました。");
+                SetStatus("状態: キャンセルされました", Color.FromArgb(100, 100, 100));
+                try { if (File.Exists(outputFile)) File.Delete(outputFile); } catch { }
+                return;
+            }
+
+            if (success && File.Exists(outputFile))
+            {
+                var elapsed = DateTime.Now - _conversionStart;
+                string elapsedStr = $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
+                AppendLog($"事前変換が完了しました。変換後の動画を読み込みます。");
+                AppendLog($"  所要時間: {elapsedStr}");
+                SetStatus("状態: 事前変換完了 — 変換後の動画を読み込み中...", Color.FromArgb(0, 120, 60));
+                LoadFile(outputFile, allowPreconvertDialog: false);
+            }
+            else
+            {
+                AppendLog($"[失敗] 事前変換に失敗しました（終了コード: {exitCode}）。");
+                string buf;
+                lock (_bufferLock) buf = _ffmpegOutputBuffer.ToString();
+                if (!string.IsNullOrWhiteSpace(buf))
+                {
+                    AppendLog("[詳細ログ]");
+                    foreach (string l in buf.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                        AppendLog("  " + l.TrimEnd('\r'));
+                }
+                SetStatus("状態: 事前変換に失敗しました", Color.OrangeRed);
+                try { if (File.Exists(outputFile)) File.Delete(outputFile); } catch { }
+                ShowUserError(
+                    "事前変換に失敗しました。",
+                    "動画ファイルまたは保存先を確認してください。\n\n" +
+                    "考えられる原因:\n" +
+                    "  ・ 動画ファイルが破損している\n" +
+                    "  ・ 出力先に書き込み権限がない\n" +
+                    "  ・ ディスク容量が不足している\n\n" +
+                    "下部のログ欄に詳細が表示されています。");
+            }
         }
 
         // ─── 再生コントロール ─────────────────────────────────────────
@@ -1007,13 +1183,11 @@ namespace MovieConverter
                 !File.Exists(_inputFile))
             {
                 btnConvert.Enabled = false;
-                btnFaststart.Enabled = false;
                 return;
             }
             btnConvert.Enabled = _startSeconds.HasValue &&
                                  _endSeconds.HasValue &&
                                  _endSeconds.Value > _startSeconds.Value;
-            btnFaststart.Enabled = _videoLoaded;
         }
 
         private async void BtnConvert_Click(object? sender, EventArgs e)
@@ -1270,143 +1444,6 @@ namespace MovieConverter
             }
         }
 
-        private async void BtnFaststart_Click(object? sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_inputFile) || !File.Exists(_inputFile))
-            {
-                ShowUserError("入力ファイルが見つかりません。", "ファイルを再度選択してください。");
-                return;
-            }
-            if (!_ffmpeg.IsAvailable)
-            {
-                ShowUserError("ffmpeg.exe が見つかりません。",
-                    $"配置場所: {_ffmpeg.FfmpegPath}\n\ndocs/ffmpeg_setup.md を参照して配置してください。");
-                return;
-            }
-
-            string outputFile = _ffmpeg.BuildFaststartOutputPath(_inputFile);
-            if (File.Exists(outputFile))
-            {
-                ShowUserError("出力ファイルが既に存在します。",
-                    $"ファイル名: {Path.GetFileName(outputFile)}\n\nしばらく時間をおいてから再実行してください。");
-                return;
-            }
-
-            _activeOperationLabel = "MP4整備中";
-            SetConvertingState(true);
-            txtLog.Clear();
-            lock (_bufferLock) _ffmpegOutputBuffer.Clear();
-
-            AppendLog($"[MP4整備開始] {DateTime.Now:yyyy/MM/dd HH:mm:ss}");
-            AppendLog($"  入力: {_inputFile}");
-            AppendLog($"  出力: {outputFile}");
-            AppendLog("MP4を整えています。大容量ファイルでは時間がかかる場合があります。");
-
-            _conversionStart = DateTime.Now;
-            _elapsedTimer?.Dispose();
-            _elapsedTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-            _elapsedTimer.Tick += ElapsedTimer_Tick;
-            _elapsedTimer.Start();
-
-            pbProgress.Style = ProgressBarStyle.Marquee;
-            pbProgress.Value = 0;
-            pbProgress.Visible = true;
-            SetStatus($"状態: {_activeOperationLabel}... 経過時間 00:00:00", Color.FromArgb(0, 120, 200));
-
-            _cancelSource = new CancellationTokenSource();
-            var ct = _cancelSource.Token;
-
-            try
-            {
-                await _ffmpeg.RunFaststartAsync(
-                    _inputFile,
-                    outputFile,
-                    _duration,
-                    ct,
-                    ConversionLogCallback,
-                    OnConversionProgress,
-                    (success, exitCode) => OnFaststartCompleted(success, exitCode, outputFile));
-            }
-            catch (FileNotFoundException ex)
-            {
-                StopConversionTimer();
-                _cancelSource?.Dispose();
-                _cancelSource = null;
-                _activeOperationLabel = "変換中";
-                AppendLog($"[エラー] {ex.Message}");
-                SetStatus("状態: エラーが発生しました", Color.OrangeRed);
-                ShowUserError("MP4整備を開始できませんでした。", ex.Message);
-                SetConvertingState(false);
-            }
-            catch (Exception ex)
-            {
-                StopConversionTimer();
-                _cancelSource?.Dispose();
-                _cancelSource = null;
-                _activeOperationLabel = "変換中";
-                AppendLog($"[予期しないエラー] {ex.Message}");
-                SetStatus("状態: エラー", Color.OrangeRed);
-                SetConvertingState(false);
-            }
-        }
-
-        private void OnFaststartCompleted(bool success, int? exitCode, string outputFile)
-        {
-            if (InvokeRequired)
-            {
-                Invoke(new Action(() => OnFaststartCompleted(success, exitCode, outputFile)));
-                return;
-            }
-
-            StopConversionTimer();
-            _cancelSource?.Dispose();
-            _cancelSource = null;
-            _activeOperationLabel = "変換中";
-            SetConvertingState(false);
-
-            if (exitCode == null)
-            {
-                AppendLog("[キャンセル] MP4整備をキャンセルしました。");
-                SetStatus("状態: キャンセルされました", Color.FromArgb(100, 100, 100));
-                try { if (File.Exists(outputFile)) File.Delete(outputFile); } catch { }
-                return;
-            }
-
-            if (success && File.Exists(outputFile))
-            {
-                var fi = new FileInfo(outputFile);
-                var elapsed = DateTime.Now - _conversionStart;
-                string elapsedStr = $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
-                AppendLog("[完了] MP4構造の整備が完了しました。作成したファイルをプレビューに読み込みます。");
-                AppendLog($"  所要時間: {elapsedStr}");
-                AppendLog($"  出力ファイル: {fi.FullName}");
-                AppendLog($"  出力サイズ: {FormatFileSize(fi.Length)}");
-                SetStatus($"状態: MP4整備完了  出力サイズ: {FormatFileSize(fi.Length)}", Color.FromArgb(0, 120, 60));
-                LoadFile(outputFile);
-            }
-            else
-            {
-                AppendLog($"[失敗] MP4整備に失敗しました（終了コード: {exitCode}）。");
-                string buf;
-                lock (_bufferLock) buf = _ffmpegOutputBuffer.ToString();
-                if (!string.IsNullOrWhiteSpace(buf))
-                {
-                    AppendLog("[詳細ログ]");
-                    foreach (string l in buf.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-                        AppendLog("  " + l.TrimEnd('\r'));
-                }
-                SetStatus("状態: MP4整備に失敗しました", Color.OrangeRed);
-                try { if (File.Exists(outputFile)) File.Delete(outputFile); } catch { }
-                ShowUserError(
-                    "MP4整備に失敗しました。",
-                    "考えられる原因:\n" +
-                    "  ・ 入力ファイルが破損している\n" +
-                    "  ・ 出力先に書き込み権限がない\n" +
-                    "  ・ ディスク容量が不足している\n\n" +
-                    "下部のログ欄に詳細が表示されています。");
-            }
-        }
-
         private void TrkVolume_Scroll(object? sender, EventArgs e)
         {
             double vol = trkVolume.Value / 100.0;
@@ -1477,7 +1514,6 @@ namespace MovieConverter
         {
             btnConvert.Enabled = !converting && ValidateCanConvertSilent();
             btnCancel.Enabled = converting;
-            btnFaststart.Enabled = !converting && _videoLoaded && _ffmpeg.IsAvailable;
             cmbQuality.Enabled = !converting;
             cmbResolution.Enabled = !converting && cmbQuality.SelectedIndex != 0;
             btnBrowse.Enabled = !converting;

@@ -1,35 +1,37 @@
 ## v0.2.0
 ### Title
-動画簡易変換ツール v0.2.0 — 「MP4を整える」ボタン追加
+動画簡易変換ツール v0.2.0 — 事前変換機能追加（プレビュー失敗時ダイアログ案内）
 
 ### Note
 ### 変更内容
 
-#### 「MP4を整える」ボタンの追加（主要変更）
+#### 事前変換機能の追加（主要変更）
 
-プレビューできないMP4のmoov atom末尾配置問題を利用者自身が解決できるよう、MP4構造整備機能を追加した。
+プレビューできないMP4を読み込んだ際に、利用者へ分かりやすく説明し同意を得てから事前変換を実行する機能を追加した。
 
-- **`FfmpegRunner.cs`**: `BuildFaststartOutputPath` を追加（`{baseName}_faststart_{timestamp}.mp4`）。`RunFaststartAsync` を追加（ffmpegオプション: `-c copy -movflags +faststart`）。プロセス実行コアを `RunProcessAsync` として共通化
-- **`MainForm.cs`**: 「MP4を整える」ボタン（`btnFaststart`）を画面上部のファイル選択行に追加。動画読み込み後に有効化。`BtnFaststart_Click` / `OnFaststartCompleted` を実装。整備完了後に出力ファイルをプレビューに自動読み込み。`_activeOperationLabel` フィールドで経過時間タイマーのラベルを切り替え（「変換中」/「MP4整備中」）。タイトルを v0.2.0 に更新
+- **`FfmpegRunner.cs`**: `BuildPreconvertedOutputPath` を追加（`{baseName}_preconverted_{timestamp}.mp4`）。`RunFaststartAsync` を追加（内部コマンド: `-c copy -movflags +faststart`）。プロセス実行コアを `RunProcessAsync` として共通化
+- **`MainForm.cs`**: プレビュー両方式失敗時に `ShowPreconvertConsentDialog()` を呼び出し同意確認。`RunPreconvertAsync`・`OnPreconvertCompleted` を実装。事前変換完了後に変換後ファイルをプレビューに自動読み込み。`_showPreconvertDialog` フラグで事前変換後ファイルへのダイアログ再表示を抑制。`_activeOperationLabel` フィールドで経過時間タイマーラベルを切り替え。タイトルを v0.2.0 に更新
 - **`MovieConverter.csproj`**: バージョン 0.1.6.0 → 0.2.0.0 / v0.1.6 → v0.2.0
 
 #### 動作仕様
 
 | 項目 | 内容 |
 |------|------|
-| 実行タイミング | ユーザーが「MP4を整える」ボタンを押したときのみ |
+| トリガー | file-uri / virtual-host 両方式でプレビュー失敗 |
+| ダイアログ | 「この動画はそのままではこの画面で再生できません。事前変換が必要です。」案内→「実行する」/「キャンセル」 |
 | 元ファイル | 変更・削除しない |
-| 出力ファイル | `{元ファイル名}_faststart_{yyyyMMdd_HHmmss}.mp4` |
+| 出力ファイル | `{元ファイル名}_preconverted_{yyyyMMdd_HHmmss}.mp4` |
 | 再エンコード | なし（`-c copy`）/ 画質劣化なし |
-| 整備後の動作 | 出力ファイルをプレビューに自動読み込み |
+| 完了後 | 変換後ファイルをプレビューに自動読み込み |
+| UI表現 | 技術用語（faststart・moov atom等）を利用者向け画面に露出しない |
 
 #### ドキュメント更新
 
 - `README.md`・`manuals/user_manual.md`・`manuals/admin_manual.md`: v0.2.0 対応（機能説明・チェックリスト・エラー対応更新）
-- `docs/tool_design.md`: セクション 4.10（faststart化機能の設計方針）を追加
-- `docs/test_scenarios.md`: セクション 12（v0.2.0 テスト項目）を追加
-- `docs/release_checklist.md`: faststart関連チェック項目を追加
-- `development_report.md`: v0.2.0 対応記録・v0.3.0候補一覧を更新
+- `docs/tool_design.md`: セクション 4.10（事前変換機能の設計方針）を追加・更新
+- `docs/test_scenarios.md`: セクション 12（v0.2.0 テスト項目）を追加・更新
+- `docs/release_checklist.md`: 事前変換関連チェック項目を追加
+- `development_report.md`: v0.2.0 対応記録を更新
 
 ---
 

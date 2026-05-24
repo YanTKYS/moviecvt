@@ -124,14 +124,14 @@ namespace MovieConverter
         }
 
         /// <summary>
-        /// faststart化の出力ファイルパスを生成する。
+        /// 事前変換の出力ファイルパスを生成する。
         /// </summary>
-        public string BuildFaststartOutputPath(string inputFile)
+        public string BuildPreconvertedOutputPath(string inputFile)
         {
             string dir = Path.GetDirectoryName(inputFile) ?? string.Empty;
             string baseName = Path.GetFileNameWithoutExtension(inputFile);
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string safeName = SanitizeFileName($"{baseName}_faststart_{timestamp}");
+            string safeName = SanitizeFileName($"{baseName}_preconverted_{timestamp}");
             return Path.Combine(dir, safeName + ".mp4");
         }
 
