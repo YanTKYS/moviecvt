@@ -1,3 +1,40 @@
+## v0.3.0
+### Title
+動画簡易変換ツール v0.3.0 — 速度優先プリセット追加
+
+### Note
+### 変更内容
+
+#### 速度優先プリセットの追加（主要変更）
+
+v0.2.2 で準備していた `SpeedPreset` を活用し、圧縮設定に「速度優先」オプションを追加した。
+
+- **`ConversionSettings.cs`**: `QualityPreset` に `SpeedPriority = 1` を追加。`HighQuality`・`Standard`・`SmallSize` の値を 1 つずつシフト
+- **`FfmpegRunner.cs`**: `SpeedPriority` ケースを追加（`-c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k`）
+- **`MainForm.cs`**: 圧縮設定コンボに「速度優先」をインデックス 1 に追加。ヒント文を switch 式に変更し速度優先の説明を追加。変換ログに「出力方式: 圧縮変換（速度優先）」を記録。タイトルを v0.3.0 に更新
+- **`MovieConverter.csproj`**: バージョン 0.2.3.0 → 0.3.0.0 / v0.2.3 → v0.3.0
+
+#### 速度優先プリセットの仕様
+
+| 項目 | 内容 |
+|------|------|
+| 表示名 | 速度優先 |
+| ffmpeg コマンド | `-c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k` |
+| 解像度変更 | 可（元のまま・720p・480p から選択可） |
+| ログ | `出力方式: 圧縮変換（速度優先）` |
+| 画面ヒント | 「速度優先は、変換時間を短くするための設定です。画質は標準より少し低下する場合があります。」 |
+
+#### ドキュメント更新
+
+- `README.md`: 速度優先プリセット追加・バージョン v0.2.3 → v0.3.0
+- `manuals/user_manual.md`: 目的別ガイド・圧縮設定表・説明ブロックを更新
+- `manuals/admin_manual.md`: バージョン v0.2.3 → v0.3.0
+- `docs/tool_design.md`: セクション 4.11（速度優先プリセット設計方針）・5.1・5.2 を更新
+- `docs/test_scenarios.md`: セクション 14（速度優先テスト項目）を追加
+- `docs/release_checklist.md`: 速度優先関連チェック項目を追加
+
+---
+
 ## v0.2.3
 ### Title
 動画簡易変換ツール v0.2.3 — コードベース確認・軽微修正

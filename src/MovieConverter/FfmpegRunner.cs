@@ -113,6 +113,11 @@ namespace MovieConverter
                 string presetName = GetPresetName(settings.Speed);
                 switch (settings.Quality)
                 {
+                    case QualityPreset.SpeedPriority:
+                        // 速度優先: 標準と同じ品質目標（crf 28）だが preset veryfast で大幅高速化。
+                        // 標準より若干ファイルサイズが増えるが処理時間は大幅に短縮される。
+                        sb.Append("-c:v libx264 -crf 28 -preset veryfast -c:a aac -b:a 128k ");
+                        break;
                     case QualityPreset.HighQuality:
                         sb.Append($"-c:v libx264 -crf 23 -preset {presetName} -c:a aac -b:a 160k ");
                         break;
