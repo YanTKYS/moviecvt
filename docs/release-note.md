@@ -1,3 +1,38 @@
+## v0.2.0
+### Title
+動画簡易変換ツール v0.2.0 — 「MP4を整える」ボタン追加
+
+### Note
+### 変更内容
+
+#### 「MP4を整える」ボタンの追加（主要変更）
+
+プレビューできないMP4のmoov atom末尾配置問題を利用者自身が解決できるよう、MP4構造整備機能を追加した。
+
+- **`FfmpegRunner.cs`**: `BuildFaststartOutputPath` を追加（`{baseName}_faststart_{timestamp}.mp4`）。`RunFaststartAsync` を追加（ffmpegオプション: `-c copy -movflags +faststart`）。プロセス実行コアを `RunProcessAsync` として共通化
+- **`MainForm.cs`**: 「MP4を整える」ボタン（`btnFaststart`）を画面上部のファイル選択行に追加。動画読み込み後に有効化。`BtnFaststart_Click` / `OnFaststartCompleted` を実装。整備完了後に出力ファイルをプレビューに自動読み込み。`_activeOperationLabel` フィールドで経過時間タイマーのラベルを切り替え（「変換中」/「MP4整備中」）。タイトルを v0.2.0 に更新
+- **`MovieConverter.csproj`**: バージョン 0.1.6.0 → 0.2.0.0 / v0.1.6 → v0.2.0
+
+#### 動作仕様
+
+| 項目 | 内容 |
+|------|------|
+| 実行タイミング | ユーザーが「MP4を整える」ボタンを押したときのみ |
+| 元ファイル | 変更・削除しない |
+| 出力ファイル | `{元ファイル名}_faststart_{yyyyMMdd_HHmmss}.mp4` |
+| 再エンコード | なし（`-c copy`）/ 画質劣化なし |
+| 整備後の動作 | 出力ファイルをプレビューに自動読み込み |
+
+#### ドキュメント更新
+
+- `README.md`・`manuals/user_manual.md`・`manuals/admin_manual.md`: v0.2.0 対応（機能説明・チェックリスト・エラー対応更新）
+- `docs/tool_design.md`: セクション 4.10（faststart化機能の設計方針）を追加
+- `docs/test_scenarios.md`: セクション 12（v0.2.0 テスト項目）を追加
+- `docs/release_checklist.md`: faststart関連チェック項目を追加
+- `development_report.md`: v0.2.0 対応記録・v0.3.0候補一覧を更新
+
+---
+
 ## v0.1.6
 ### Title
 動画簡易変換ツール v0.1.6 — 試作版配布前整備（ドキュメント・チェックリスト）
