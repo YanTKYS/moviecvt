@@ -18,14 +18,10 @@ namespace MovieConverter
         private Label lblFileSize = null!;
         private Label lblVideoInfo = null!;
 
-        // 動画プレビュープレイヤー（標準: WebView2 / 代替: WPF MediaElement）
+        // 動画プレビュープレイヤー（WebView2 標準方式）
+        // v0.3.1 で追加した WPF MediaElement 代替方式は v0.3.2 で起動安定性のため無効化
         private WebView2VideoPlayer _webView2Player = null!;
-        private WpfMediaElementVideoPlayer _wpfPlayer = null!;
-        private IVideoPlayer _player = null!;
-        private Panel _previewContainer = null!;
-        private ComboBox cmbPlayerMode = null!;
-        private bool _switchingPlayer;
-        private int _playerVersion; // プレイヤー切り替え時にインクリメント（旧イベントを無視するため）
+        private IVideoPlayer _player = null!
 
         private Panel pnlSeek = null!;
         private Label lblCurrentTime = null!;
@@ -87,7 +83,6 @@ namespace MovieConverter
         public MainForm()
         {
             _webView2Player = new WebView2VideoPlayer();
-            _wpfPlayer = new WpfMediaElementVideoPlayer();
             _player = _webView2Player;
             InitializeComponent();
             SubscribePlayerEvents();
@@ -100,16 +95,10 @@ namespace MovieConverter
         }
 
         // ─── プレイヤーイベント購読 ───────────────────────────────────
-        // プレイヤー切り替え後も旧プレイヤーの残存イベントが来るケースに備え、
-        // バージョン番号をクロージャにキャプチャして古い呼び出しを無視する。
         private void SubscribePlayerEvents()
         {
-            _playerVersion++;
-            int v = _playerVersion;
-
             _player.VideoLoaded += duration =>
             {
-                if (v != _playerVersion) return;
                 _duration = duration;
                 _videoLoaded = true;
                 OnVideoLoaded();
@@ -117,7 +106,6 @@ namespace MovieConverter
 
             _player.TimeUpdated += (currentTime, duration) =>
             {
-                if (v != _playerVersion) return;
                 _currentTime = currentTime;
                 if (duration > 0) _duration = duration;
                 UpdateTimeDisplay();
@@ -125,88 +113,33 @@ namespace MovieConverter
 
             _player.PlaybackStarted += () =>
             {
-                if (v != _playerVersion) return;
                 _isPlaying = true;
                 UpdatePlayPauseButton();
             };
 
             _player.PlaybackPaused += () =>
             {
-                if (v != _playerVersion) return;
                 _isPlaying = false;
                 UpdatePlayPauseButton();
             };
 
             _player.PlaybackEnded += () =>
             {
-                if (v != _playerVersion) return;
                 _isPlaying = false;
                 UpdatePlayPauseButton();
             };
 
             _player.PlaybackBlocked += () =>
             {
-                if (v != _playerVersion) return;
                 _isPlaying = false;
                 UpdatePlayPauseButton();
                 SetStatus("状態: プレイヤー内の ▶ ボタンを押して再生してください",
                     Color.FromArgb(60, 60, 60));
             };
 
-            _player.VideoError += msg => { if (v == _playerVersion) OnVideoPlayerError(msg); };
-            _player.FileDropped += path => { if (v == _playerVersion) LoadFile(path); };
-            _player.LogMessage += msg => { if (v == _playerVersion) AppendLog(msg); };
-        }
-
-        // ─── プレイヤー切り替え ───────────────────────────────────────
-        private void SwitchToPlayer(bool useStandard)
-        {
-            var newPlayer = useStandard ? (IVideoPlayer)_webView2Player : _wpfPlayer;
-            if (ReferenceEquals(_player, newPlayer)) return;
-
-            _player = newPlayer;
-
-            // cmbPlayerMode との再入を防ぐ
-            _switchingPlayer = true;
-            cmbPlayerMode.SelectedIndex = useStandard ? 0 : 1;
-            _switchingPlayer = false;
-
-            // プレビューコンテナを差し替え
-            _previewContainer.Controls.Clear();
-            _previewContainer.Controls.Add(_player.PreviewControl);
-
-            // イベントの再購読（バージョン番号が更新されるので旧ハンドラは無効化）
-            SubscribePlayerEvents();
-
-            AppendLog($"[プレビュー] プレビュー方式を切り替えました: {(useStandard ? "標準" : "代替")}");
-
-            // WebView2 は非同期初期化済みのはずだが未完了なら再試行
-            if (useStandard && !_webView2Player.IsReady)
-            {
-                string appDir = Path.GetDirectoryName(Environment.ProcessPath)
-                    ?? AppContext.BaseDirectory;
-                _ = _webView2Player.InitializeAsync(appDir);
-            }
-        }
-
-        private void CmbPlayerMode_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (_switchingPlayer) return;
-            bool useStandard = cmbPlayerMode.SelectedIndex == 0;
-            if ((useStandard && ReferenceEquals(_player, _webView2Player)) ||
-                (!useStandard && ReferenceEquals(_player, _wpfPlayer)))
-                return;
-
-            SwitchToPlayer(useStandard);
-
-            if (!string.IsNullOrEmpty(_inputFile) && File.Exists(_inputFile))
-            {
-                _showPreconvertDialog = true;
-                _videoLoaded = false;
-                ResetCutDisplay();
-                SetStatus("状態: 動画を再読み込み中...", Color.FromArgb(60, 60, 60));
-                _player.LoadVideo(_inputFile);
-            }
+            _player.VideoError   += OnVideoPlayerError;
+            _player.FileDropped  += LoadFile;
+            _player.LogMessage   += AppendLog;
         }
 
         // ─── UI 初期化 ───────────────────────────────────────────────
@@ -214,7 +147,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.3.1";
+            Text = "動画簡易変換ツール  v0.3.2";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -256,7 +189,7 @@ namespace MovieConverter
             {
                 Text = "ファイル: (未選択)",
                 Location = new Point(154, 12),
-                Size = new Size(440, 18),
+                Size = new Size(620, 18),
                 ForeColor = Color.FromArgb(60, 60, 60),
                 AutoEllipsis = true
             };
@@ -265,28 +198,9 @@ namespace MovieConverter
             {
                 Text = "",
                 Location = new Point(154, 32),
-                Size = new Size(440, 18),
+                Size = new Size(620, 18),
                 ForeColor = Color.FromArgb(100, 100, 100)
             };
-
-            var lblPlayerModeLabel = new Label
-            {
-                Text = "プレビュー方式:",
-                Location = new Point(606, 14),
-                Size = new Size(88, 18),
-                ForeColor = Color.FromArgb(80, 80, 80),
-                TextAlign = ContentAlignment.MiddleRight
-            };
-
-            cmbPlayerMode = new ComboBox
-            {
-                Location = new Point(698, 10),
-                Size = new Size(78, 24),
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
-            cmbPlayerMode.Items.AddRange(new object[] { "標準", "代替" });
-            cmbPlayerMode.SelectedIndex = 0;
-            cmbPlayerMode.SelectedIndexChanged += CmbPlayerMode_SelectedIndexChanged;
 
             lblVideoInfo = new Label
             {
@@ -300,16 +214,12 @@ namespace MovieConverter
 
             pnlFile.Controls.AddRange(new Control[]
             {
-                btnBrowse, lblFilePath, lblFileSize, lblVideoInfo,
-                lblPlayerModeLabel, cmbPlayerMode
+                btnBrowse, lblFilePath, lblFileSize, lblVideoInfo
             });
             tableLayout.Controls.Add(pnlFile, 0, 0);
 
-            // ── Row 1: 動画プレビュー（IVideoPlayer が提供するコントロール） ──
-            // _previewContainer でプレイヤーを包み、SwitchToPlayer で差し替え可能にする
-            _previewContainer = new Panel { Dock = DockStyle.Fill };
-            _previewContainer.Controls.Add(_webView2Player.PreviewControl);
-            tableLayout.Controls.Add(_previewContainer, 0, 1);
+            // ── Row 1: 動画プレビュー（WebView2 標準方式） ──
+            tableLayout.Controls.Add(_player.PreviewControl, 0, 1);
 
             // ── Row 2: シークバー ──
             pnlSeek = CreateSectionPanel();
@@ -653,11 +563,6 @@ namespace MovieConverter
             AllowDrop = true;
             DragEnter += OnDragEnter;
             DragDrop += OnDragDrop;
-
-            // プレビューコンテナへのドロップ（各プレイヤー固有の D&D は各実装内で処理）
-            _previewContainer.AllowDrop = true;
-            _previewContainer.DragEnter += OnDragEnter;
-            _previewContainer.DragDrop += OnDragDrop;
         }
 
         // ─── FFmpeg 存在確認 ──────────────────────────────────────────
@@ -778,29 +683,6 @@ namespace MovieConverter
             trkSeek.Enabled = false;
             UpdateConvertButton();
 
-            // 標準プレビュー（WebView2）が失敗した場合、代替プレビューを案内する
-            if (ReferenceEquals(_player, _webView2Player) && !string.IsNullOrEmpty(_inputFile))
-            {
-                SetStatus("状態: 標準プレビューで再生できませんでした", Color.FromArgb(180, 100, 0));
-                AppendLog("[プレビュー] 標準プレビューで再生できませんでした。");
-
-                var result = MessageBox.Show(
-                    "標準のプレビューで再生できませんでした。\n\n代替プレビューで開き直しますか？",
-                    "プレビュー方式の確認",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question,
-                    MessageBoxDefaultButton.Button1);
-
-                if (result == DialogResult.Yes)
-                {
-                    SwitchToPlayer(false); // 代替プレビューに切り替え
-                    SetStatus("状態: 代替プレビューで読み込み中...", Color.FromArgb(60, 60, 60));
-                    _player.LoadVideo(_inputFile);
-                    return;
-                }
-                // No を選んだ場合は事前変換ダイアログへ進む
-            }
-
             // 事前変換ダイアログを案内する（ユーザー選択ファイルのみ、事前変換後ファイルは再案内しない）
             if (_showPreconvertDialog && !string.IsNullOrEmpty(_inputFile))
             {
@@ -816,9 +698,8 @@ namespace MovieConverter
             // ダイアログでキャンセルされた場合、または再案内不要の場合
             SetStatus("状態: 動画の読み込みに失敗しました", Color.OrangeRed);
             AppendLog("確認方法:");
-            AppendLog("  1. 代替プレビューで再試してください（画面右上「プレビュー方式: 代替」）。");
-            AppendLog("  2. Microsoft EdgeでこのMP4を直接開いて再生できるか確認してください。");
-            AppendLog("  3. 解決しない場合は管理者またはDX担当に相談してください。");
+            AppendLog("  1. Microsoft EdgeでこのMP4を直接開いて再生できるか確認してください。");
+            AppendLog("  2. 解決しない場合は管理者またはDX担当に相談してください。");
         }
 
         private bool ShowPreconvertConsentDialog()
@@ -1429,7 +1310,6 @@ namespace MovieConverter
             btnCancel.Enabled = converting;
             cmbQuality.Enabled = !converting;
             cmbResolution.Enabled = !converting && cmbQuality.SelectedIndex != 0;
-            cmbPlayerMode.Enabled = !converting;
             btnBrowse.Enabled = !converting;
             bool rangeEnabled = !converting && _videoLoaded;
             btnSetStart.Enabled = rangeEnabled;
