@@ -68,6 +68,13 @@ namespace MovieConverter
             return $"{hours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}.{ts.Milliseconds:D3}";
         }
 
+        private static string GetPresetName(SpeedPreset speed) => speed switch
+        {
+            SpeedPreset.Fast     => "fast",
+            SpeedPreset.VeryFast => "veryfast",
+            _                    => "medium"
+        };
+
         private string BuildArguments(ConversionSettings settings, string outputFile)
         {
             var sb = new StringBuilder();
@@ -103,16 +110,17 @@ namespace MovieConverter
                 }
 
                 // 品質プリセット（再エンコード方式）
+                string presetName = GetPresetName(settings.Speed);
                 switch (settings.Quality)
                 {
                     case QualityPreset.HighQuality:
-                        sb.Append("-c:v libx264 -crf 23 -preset medium -c:a aac -b:a 160k ");
+                        sb.Append($"-c:v libx264 -crf 23 -preset {presetName} -c:a aac -b:a 160k ");
                         break;
                     case QualityPreset.SmallSize:
-                        sb.Append("-c:v libx264 -crf 32 -preset medium -c:a aac -b:a 96k ");
+                        sb.Append($"-c:v libx264 -crf 32 -preset {presetName} -c:a aac -b:a 96k ");
                         break;
                     default: // Standard
-                        sb.Append("-c:v libx264 -crf 28 -preset medium -c:a aac -b:a 128k ");
+                        sb.Append($"-c:v libx264 -crf 28 -preset {presetName} -c:a aac -b:a 128k ");
                         break;
                 }
             }
