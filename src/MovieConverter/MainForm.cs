@@ -18,6 +18,7 @@ namespace MovieConverter
         private Button btnBrowse = null!;
         private Label lblFilePath = null!;
         private Label lblFileSize = null!;
+        private Label lblVideoInfo = null!;
 
         private Panel pnlPreview = null!;
         private WebView2 webView2 = null!;
@@ -73,8 +74,10 @@ namespace MovieConverter
         private string? _pendingLoadAfterNav; // フォールバック再ナビゲーション後に読み込むファイル
         private CancellationTokenSource? _cancelSource;
         private readonly FfmpegRunner _ffmpeg = new();
+        private readonly FfprobeRunner _ffprobe = new();
         private System.Windows.Forms.Timer? _elapsedTimer;
         private DateTime _conversionStart;
+        private double _lastProgressRatio;
         private string _activeOperationLabel = "変換中";
         private bool _showPreconvertDialog = true;
         private readonly StringBuilder _ffmpegOutputBuffer = new();
@@ -94,7 +97,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.2.0";
+            Text = "動画簡易変換ツール  v0.2.1";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -110,7 +113,7 @@ namespace MovieConverter
                 BackColor = Color.Transparent
             };
             tableLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 68));    // 0: file
+            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));    // 0: file
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));   // 1: preview
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));    // 2: seek bar
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));    // 3: playback buttons
@@ -149,7 +152,17 @@ namespace MovieConverter
                 ForeColor = Color.FromArgb(100, 100, 100)
             };
 
-            pnlFile.Controls.AddRange(new Control[] { btnBrowse, lblFilePath, lblFileSize });
+            lblVideoInfo = new Label
+            {
+                Text = "",
+                Location = new Point(4, 60),
+                Size = new Size(760, 22),
+                ForeColor = Color.FromArgb(80, 80, 80),
+                Font = new Font("Meiryo UI", 8.5f),
+                AutoEllipsis = true
+            };
+
+            pnlFile.Controls.AddRange(new Control[] { btnBrowse, lblFilePath, lblFileSize, lblVideoInfo });
             tableLayout.Controls.Add(pnlFile, 0, 0);
 
             // ── Row 1: 動画プレビュー ──
@@ -790,6 +803,9 @@ namespace MovieConverter
             var fi = new FileInfo(filePath);
             lblFilePath.Text = $"ファイル: {fi.FullName}";
             lblFileSize.Text = $"サイズ: {FormatFileSize(fi.Length)}";
+            lblVideoInfo.Text = _ffprobe.IsAvailable ? "動画情報を取得中..." : "";
+            lblVideoInfo.ForeColor = Color.FromArgb(140, 140, 140);
+            _ = LoadVideoInfoAsync(filePath);
 
             ResetCutDisplay();
             SetStatus("状態: 動画を読み込み中...", Color.FromArgb(60, 60, 60));
@@ -945,6 +961,7 @@ namespace MovieConverter
             }
 
             _activeOperationLabel = "事前変換中";
+            _lastProgressRatio = 0;
             SetConvertingState(true);
             lock (_bufferLock) _ffmpegOutputBuffer.Clear();
 
@@ -1219,6 +1236,7 @@ namespace MovieConverter
             };
 
             _activeOperationLabel = "変換中";
+            _lastProgressRatio = 0;
             SetConvertingState(true);
             txtLog.Clear();
             lock (_bufferLock) _ffmpegOutputBuffer.Clear();
@@ -1308,6 +1326,7 @@ namespace MovieConverter
                 Invoke(new Action(() => OnConversionProgress(ratio)));
                 return;
             }
+            _lastProgressRatio = ratio;
             int percent = Math.Max(0, Math.Min(100, (int)(ratio * 100)));
             if (pbProgress.Style != ProgressBarStyle.Continuous)
                 pbProgress.Style = ProgressBarStyle.Continuous;
@@ -1319,10 +1338,25 @@ namespace MovieConverter
         {
             var elapsed = DateTime.Now - _conversionStart;
             string t = $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
-            string progress = pbProgress.Style == ProgressBarStyle.Continuous
-                ? $"  {pbProgress.Value}%"
-                : "";
-            SetStatus($"状態: {_activeOperationLabel}... 経過時間 {t}{progress}", Color.FromArgb(0, 120, 200));
+
+            if (pbProgress.Style == ProgressBarStyle.Continuous)
+            {
+                int percent = pbProgress.Value;
+                if (_lastProgressRatio > 0.05)
+                {
+                    double remainSec = elapsed.TotalSeconds * (1.0 - _lastProgressRatio) / _lastProgressRatio;
+                    string rem = $"{(int)(remainSec / 3600):D2}:{(int)((remainSec % 3600) / 60):D2}:{(int)(remainSec % 60):D2}";
+                    SetStatus($"状態: {_activeOperationLabel}... {percent}%  残り約 {rem}", Color.FromArgb(0, 120, 200));
+                }
+                else
+                {
+                    SetStatus($"状態: {_activeOperationLabel}... {percent}%  残り時間を計算中...", Color.FromArgb(0, 120, 200));
+                }
+            }
+            else
+            {
+                SetStatus($"状態: {_activeOperationLabel}... 経過時間 {t}", Color.FromArgb(0, 120, 200));
+            }
         }
 
         private void StopConversionTimer()
@@ -1533,6 +1567,47 @@ namespace MovieConverter
             return _startSeconds.HasValue &&
                    _endSeconds.HasValue &&
                    _endSeconds.Value > _startSeconds.Value;
+        }
+
+        // ─── 動画情報表示 ─────────────────────────────────────────────
+        private async Task LoadVideoInfoAsync(string filePath)
+        {
+            if (!_ffprobe.IsAvailable) return;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            try
+            {
+                var info = await _ffprobe.GetVideoInfoAsync(filePath, cts.Token)
+                    .ConfigureAwait(true);
+                if (info == null)
+                {
+                    SetVideoInfoText("動画情報を取得できませんでした", Color.FromArgb(150, 150, 150));
+                    return;
+                }
+                var parts = new System.Collections.Generic.List<string>();
+                if (!string.IsNullOrEmpty(info.Duration))   parts.Add($"長さ: {info.Duration}");
+                if (!string.IsNullOrEmpty(info.Resolution)) parts.Add($"解像度: {info.Resolution}");
+                if (!string.IsNullOrEmpty(info.VideoCodec)) parts.Add($"映像: {info.VideoCodec}");
+                if (!string.IsNullOrEmpty(info.AudioCodec)) parts.Add($"音声: {info.AudioCodec}");
+                if (!string.IsNullOrEmpty(info.FrameRate))  parts.Add(info.FrameRate);
+                if (!string.IsNullOrEmpty(info.FileSize))   parts.Add($"サイズ: {info.FileSize}");
+                if (!string.IsNullOrEmpty(info.Bitrate))    parts.Add($"ビットレート: {info.Bitrate}");
+                SetVideoInfoText(string.Join("  /  ", parts), Color.FromArgb(80, 80, 80));
+            }
+            catch
+            {
+                SetVideoInfoText("動画情報を取得できませんでした", Color.FromArgb(150, 150, 150));
+            }
+        }
+
+        private void SetVideoInfoText(string text, Color color)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => SetVideoInfoText(text, color)));
+                return;
+            }
+            lblVideoInfo.Text = text;
+            lblVideoInfo.ForeColor = color;
         }
 
         // ─── ログ・ステータス ─────────────────────────────────────────
