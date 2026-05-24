@@ -4,6 +4,7 @@ namespace MovieConverter
 {
     public enum QualityPreset
     {
+        FastCut,      // しない（高速カット）
         HighQuality,  // 画質優先
         Standard,     // 標準
         SmallSize     // 容量優先
