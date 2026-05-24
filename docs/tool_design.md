@@ -3,7 +3,7 @@
 | 項目 | 内容 |
 |------|------|
 | ツール名 | 動画簡易変換ツール |
-| バージョン | v0.1.0 |
+| バージョン | v0.3.1 |
 | 作成日 | 2026-05-23 |
 | 対象利用者 | 庁内一般職員 |
 | 利用環境 | Windows 10/11、閉域または庁内ネットワーク |
@@ -68,15 +68,16 @@
 - ローカルHTMLのみを使用し、外部CDNやネットワーク接続に依存しない
 - WinForms に WebView2 コントロールとして埋め込めるため、1画面完結の構成を維持できる
 
-**第二候補（WPF MediaElement）との比較:**
+**代替方式（WPF MediaElement）との比較（v0.3.1 で代替プレビューとして実装）:**
 
 | 比較項目 | WebView2 + HTML video | WPF MediaElement |
 |----------|----------------------|-----------------|
-| プロジェクト方式 | WinForms | WPF（XAML必要） |
+| プロジェクト方式 | WinForms | WPF + ElementHost（UseWpf=true） |
 | MP4対応 | ○ | ○（コーデック依存） |
 | シーク精度 | ○ | △（一部形式で不安定） |
-| 保守性 | HTML/JS + C# | XAML + C# |
-| 配布容易性 | WebView2 Runtime 必要 | .NET ランタイムのみ |
+| 保守性 | HTML/JS + C# | C#（XAMLなし） |
+| 配布容易性 | WebView2 Runtime 必要 | .NET WPF ランタイムのみ |
+| v0.3.1 での位置付け | 標準プレビュー | 代替プレビュー（フォールバック） |
 
 **第三候補（Windows Media Player ActiveX）との比較:**
 
@@ -349,4 +350,62 @@ CRF 28（標準と同じ品質目標）+ preset veryfast を採用した。
 - 解像度コンボは速度優先時も有効（他の圧縮変換と同様）
 - 変換ログ: 「出力方式: 圧縮変換（速度優先）」
 
-*作成: 2026-05-23  更新: 2026-05-24（v0.3.0）*
+### 4.12 代替プレビュー方式: WPF MediaElement（v0.3.1）
+
+**背景:**
+
+標準プレビュー（WebView2）は Windows 10 20H2 以降・Windows 11 で動作するが、一部の端末環境・一部の MP4 ファイルでプレビューが失敗する場合がある。v0.3.1 では WPF MediaElement を代替プレビューとして追加し、標準プレビューが失敗した場合のフォールバック手段を提供する。
+
+**実装方式:**
+
+| 項目 | 内容 |
+|------|------|
+| コントロール | `System.Windows.Controls.MediaElement`（WPF） |
+| WinForms 埋め込み | `System.Windows.Forms.Integration.ElementHost` で WinForms Panel に埋め込む |
+| プロジェクト設定 | `<UseWpf>true</UseWpf>` を csproj に追加（`WindowsFormsIntegration` が自動参照される） |
+| 位置検出 | WPF MediaElement に PositionChanged イベントなし。WinForms Timer（250ms）でポーリング |
+| LoadedBehavior | `Manual`（Play() 呼び出しで読み込み開始） |
+
+**読み込みトリガー方式（`_loadingOnly` パターン）:**
+
+WPF MediaElement の `LoadedBehavior = Manual` では、`Source` を設定しただけでは `MediaOpened` が発火しない。`Play()` を呼ぶことで読み込みが開始され `MediaOpened` が発火する。
+
+- `LoadVideo()` 内: `Source` 設定 → `Play()` で読み込みトリガー
+- `OnMediaOpened()` 内: 即座に `Pause()` → 動画を停止してからユーザーに委ねる
+- この `Pause()` 呼び出し中は `_loadingOnly = true` のため `PlaybackPaused` イベントが UI に伝播しない
+
+**フォールバックフロー:**
+
+```
+標準プレビュー（WebView2）読み込み失敗
+  ↓
+「標準のプレビューで再生できませんでした。代替プレビューで開き直しますか？」
+  ↓ YesNo ダイアログ（自動切り替えなし、利用者の同意を取得）
+  ↓ Yes
+代替プレビュー（WPF MediaElement）で同一ファイルを読み込み
+  ↓ さらに失敗した場合
+事前変換ダイアログ（既存のフォールバック）
+```
+
+**UI: プレビュー方式コンボボックス:**
+
+画面右上の「プレビュー方式:」コンボボックスで手動切り替えも可能。
+- 「標準」: WebView2（file-uri + virtual-host フォールバック）
+- 「代替」: WPF MediaElement（ElementHost）
+
+**環境依存の注意:**
+
+WPF MediaElement は端末にインストールされている .NET WPF ランタイム・コーデックに依存する。再生できるファイルは端末環境によって異なる場合がある。
+
+**LibVLCSharp を採用しなかった理由:**
+
+| 比較項目 | WPF MediaElement | LibVLCSharp |
+|---------|-----------------|-------------|
+| 外部DLL | 不要（.NET 標準） | libvlc*.dll の配置が必要 |
+| 配布容易性 | ○ | △（DLL一式の同梱が必要） |
+| 閉域環境での配布 | 問題なし | DLL管理・ライセンス確認が必要 |
+| 初期版での採用 | 採用 | 今回は採用しない |
+
+LibVLCSharp は再生対応形式が広く安定しているが、libvlc DLL の配置・ライセンス確認が必要となる。閉域環境への配布容易性を優先し、v0.3.1 では WPF MediaElement を採用した。
+
+*作成: 2026-05-23  更新: 2026-05-24（v0.3.1）*
