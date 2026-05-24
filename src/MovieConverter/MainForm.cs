@@ -505,13 +505,7 @@ namespace MovieConverter
             DragEnter += OnDragEnter;
             DragDrop += OnDragDrop;
 
-            // WebView2 は自身でドラッグを処理するため WinForms の DragDrop が届かない。
-            // AllowExternalDrop = false（CoreWebView2 初期化後に設定）と組み合わせて
-            // WebView2 コントロール上のドロップも WinForms 側で受け取る。
-            webView2.AllowDrop = true;
-            webView2.DragEnter += OnDragEnter;
-            webView2.DragDrop += OnDragDrop;
-
+            // pnlPreview は WebView2 初期化前（lblPreviewHint 表示中）にドロップされた場合に対応
             pnlPreview.AllowDrop = true;
             pnlPreview.DragEnter += OnDragEnter;
             pnlPreview.DragDrop += OnDragDrop;
@@ -570,9 +564,9 @@ namespace MovieConverter
 
                 webView2.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 webView2.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+                // D&DでMP4をWebView2にドロップした場合: ナビゲーションと新規ウィンドウの両方をキャンセルしてアプリ側で読み込む
                 webView2.CoreWebView2.NavigationStarting += OnWebView2NavigationStarting;
-                // ブラウザ側のドロップ処理を無効化し、WinForms の DragDrop に委譲する
-                webView2.CoreWebView2.Settings.AllowExternalDrop = false;
+                webView2.CoreWebView2.NewWindowRequested += OnWebView2NewWindowRequested;
 
                 // 主方式: file:// URI で player.html を直接ロード
                 // → 動画も file:// URI で読み込むため、CORS制約なしで大容量ファイルを扱える
@@ -1192,9 +1186,24 @@ namespace MovieConverter
                 string localPath = new Uri(e.Uri).LocalPath;
                 if (Path.GetExtension(localPath).ToLowerInvariant() == ".mp4")
                 {
-                    // D&DでMP4をWebView2に直接ドロップした場合: ブラウザ内再生をキャンセルしてアプリ側で読み込む
                     e.Cancel = true;
                     LoadFile(localPath);
+                }
+            }
+            catch { /* URI パース失敗は無視 */ }
+        }
+
+        private void OnWebView2NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+        {
+            // D&DでMP4をWebView2にドロップすると別ウィンドウで再生しようとする場合をキャンセルしてアプリ側で読み込む
+            e.Handled = true;
+            try
+            {
+                if (e.Uri.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+                {
+                    string localPath = new Uri(e.Uri).LocalPath;
+                    if (Path.GetExtension(localPath).ToLowerInvariant() == ".mp4")
+                        LoadFile(localPath);
                 }
             }
             catch { /* URI パース失敗は無視 */ }
