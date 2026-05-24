@@ -33,7 +33,13 @@ MovieConverter/
 ├── MovieConverter.exe         ← アプリ本体
 ├── bin/
 │   └── ffmpeg/
-│       └── ffmpeg.exe         ← 別途入手して配置（必須）
+│       ├── ffmpeg.exe         ← 別途入手して配置（必須）
+│       ├── avcodec-*.dll      ┐
+│       ├── avformat-*.dll     │ 配布元ZIPのDLL一式を
+│       ├── avutil-*.dll       │ ffmpeg.exe と同じフォルダに配置
+│       ├── swresample-*.dll   │ (ffmpeg.exe 単体では動作しない
+│       ├── swscale-*.dll      │  ビルドがある)
+│       └── その他のDLL        ┘
 ├── Assets/
 │   └── player.html            ← プレイヤー用HTML（必須）
 ├── docs/
@@ -49,9 +55,19 @@ MovieConverter/
    - 例: `C:\Tools\MovieConverter\`
    - 全利用者が使う場合は共有フォルダへの配置を検討する（ただし出力先は各自の端末内を推奨）
 
-2. `docs/ffmpeg_setup.md` を参照し、`ffmpeg.exe` を `bin\ffmpeg\` フォルダに配置する
+2. `docs/ffmpeg_setup.md` を参照し、`ffmpeg.exe` および同梱DLL一式を `bin\ffmpeg\` フォルダに配置する
+   - `ffmpeg.exe` 単体だけでは動作しないビルドがある
+   - 配布元ZIPのフォルダ構成を崩さずにコピーすること
 
-3. 動作確認を行う（`docs/test_scenarios.md` の正常系テスト）
+3. コマンドプロンプトで動作確認を行う（**配布前に必ず実施**）
+
+   ```bat
+   bin\ffmpeg\ffmpeg.exe -version
+   ```
+
+   バージョン情報が表示されれば配置は正常。表示されない場合はDLL不足の可能性がある。
+
+4. 動作確認を行う（`docs/test_scenarios.md` の正常系テスト）
 
 4. 利用者に `manuals/user_manual.md` を配布する
 
@@ -185,10 +201,19 @@ faststart化後に再生できる場合 → moov atomの末尾配置が原因だ
 
 | 確認事項 | 対応 |
 |----------|------|
-| `bin\ffmpeg\ffmpeg.exe` が存在し実行可能か | コマンドプロンプトで `ffmpeg.exe -version` を実行して確認 |
+| `bin\ffmpeg\ffmpeg.exe` が存在し実行可能か | コマンドプロンプトで `bin\ffmpeg\ffmpeg.exe -version` を実行して確認 |
 | ffmpeg.exe がウイルス対策ソフトにブロックされていないか | 除外設定を検討する |
 | 出力先フォルダへの書き込み権限があるか | フォルダのアクセス権を確認する |
 | ディスク容量が十分か | 空き容量を確認する |
+
+#### 終了コード `-1073741515` が表示される場合
+
+`ffmpeg.exe` は見つかっているが、必要なDLLが不足しています。
+
+- `bin\ffmpeg\` フォルダに配布元ZIPのDLL一式（`avcodec-*.dll`、`avformat-*.dll`、`avutil-*.dll`、`swresample-*.dll`、`swscale-*.dll` 等）を配置してください
+- `bin\ffmpeg\ffmpeg.exe -version` を実行してバージョン情報が表示されることを確認してください
+- 表示されない場合は配布元のZIPから再度DLLを取り出して配置してください
+- ライセンス・配布元・同梱ファイルの扱いは管理者が確認してください
 
 ---
 
@@ -208,4 +233,4 @@ faststart化後に再生できる場合 → moov atomの末尾配置が原因だ
 
 ---
 
-*作成: 2026-05-23  更新: 2026-05-23  バージョン: v0.1.2*
+*作成: 2026-05-23  更新: 2026-05-24  バージョン: v0.1.3*
