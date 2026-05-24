@@ -1,19 +1,19 @@
 ## v0.1.4
 ### Title
-動画簡易変換ツール v0.1.4 — 全体変換モード追加・D&D修正・プレビュー音量追加
+動画簡易変換ツール v0.1.4 — 全体変換自動判定・D&D修正・プレビュー音量追加
 
 ### Note
 ### 変更内容
 
-#### 全体変換モードの追加
+#### 全体変換の自動判定
 
 - **`ConversionSettings.cs`**: `ConversionMode`（RangeOnly/FullVideo）を追加
 - **`FfmpegRunner.cs`**: `FullVideo` 時は `-ss`/`-to` を付加しない
-- **`MainForm.cs`**: 「選択範囲を変換」/「動画全体を変換」ラジオボタンを追加。FullVideo時は開始・終了位置の指定が不要。FullVideo + FastCut 選択時は自動的に「標準」に切り替わる
+- **`MainForm.cs`**: 動画ロード時に開始=0・終了=動画時間を自動設定。変換実行時に開始≈0かつ終了≈動画時間の場合は自動的にFullVideoモード（-ss/-to なし）を選択。ユーザーがUIで範囲を変更すれば自動的にRangeOnlyモードになる
 
 #### D&D時の挙動修正
 
-- **`MainForm.cs`**: `CoreWebView2.NavigationStarting` でMP4ファイルへのナビゲーションをインターセプト・キャンセルして `LoadFile()` へリダイレクト。WebView2にD&Dしてもブラウザ内再生されなくなる
+- **`MainForm.cs`**: `CoreWebView2.Settings.AllowExternalDrop = false` でWebView2ブラウザ側のドロップ処理を無効化し、WinForms OLE DragDropハンドラに委譲。`webView2`・`pnlPreview` にもWinFormsのDragEnter/DragDropを登録。`NavigationStarting` によるMP4ナビゲーションキャンセルは安全網として継続
 
 #### プレビュー音量スライダー追加
 

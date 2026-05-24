@@ -35,8 +35,6 @@ namespace MovieConverter
         private Button btnMute = null!;
 
         private Panel pnlCut = null!;
-        private RadioButton rbtRangeOnly = null!;
-        private RadioButton rbtFullVideo = null!;
         private Button btnSetStart = null!;
         private TextBox txtStartTime = null!;
         private Label lblStartLabel = null!;
@@ -108,7 +106,7 @@ namespace MovieConverter
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));   // 1: preview
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));    // 2: seek bar
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));    // 3: playback buttons
-            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 140));   // 4: cut position
+            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));   // 4: cut position
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90));    // 5: settings
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));    // 6: convert
             tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));   // 7: log
@@ -265,31 +263,14 @@ namespace MovieConverter
             pnlPlayback.Controls.AddRange(new Control[] { btnBack5, btnPlayPause, btnForward5, lblVolume, trkVolume, btnMute });
             tableLayout.Controls.Add(pnlPlayback, 0, 3);
 
-            // ── Row 4: 変換モード + カット位置 ──
+            // ── Row 4: カット位置 ──
             pnlCut = CreateSectionPanel();
             pnlCut.Padding = new Padding(4, 4, 4, 4);
-
-            rbtRangeOnly = new RadioButton
-            {
-                Text = "選択範囲を変換",
-                Location = new Point(4, 8),
-                Size = new Size(140, 22),
-                Checked = true
-            };
-            rbtRangeOnly.CheckedChanged += RbtConversionMode_CheckedChanged;
-
-            rbtFullVideo = new RadioButton
-            {
-                Text = "動画全体を変換",
-                Location = new Point(156, 8),
-                Size = new Size(140, 22)
-            };
-            rbtFullVideo.CheckedChanged += RbtConversionMode_CheckedChanged;
 
             btnSetStart = new Button
             {
                 Text = "現在位置を開始に設定",
-                Location = new Point(4, 40),
+                Location = new Point(4, 8),
                 Size = new Size(160, 28),
                 UseVisualStyleBackColor = true,
                 Enabled = false
@@ -299,14 +280,14 @@ namespace MovieConverter
             lblStartLabel = new Label
             {
                 Text = "開始位置:",
-                Location = new Point(174, 45),
+                Location = new Point(174, 13),
                 Size = new Size(60, 20),
                 TextAlign = ContentAlignment.MiddleRight
             };
 
             txtStartTime = new TextBox
             {
-                Location = new Point(238, 43),
+                Location = new Point(238, 11),
                 Size = new Size(90, 24),
                 Text = "--:--:--",
                 TextAlign = HorizontalAlignment.Center,
@@ -317,7 +298,7 @@ namespace MovieConverter
             btnSetEnd = new Button
             {
                 Text = "現在位置を終了に設定",
-                Location = new Point(4, 76),
+                Location = new Point(4, 44),
                 Size = new Size(160, 28),
                 UseVisualStyleBackColor = true,
                 Enabled = false
@@ -327,14 +308,14 @@ namespace MovieConverter
             lblEndLabel = new Label
             {
                 Text = "終了位置:",
-                Location = new Point(174, 81),
+                Location = new Point(174, 49),
                 Size = new Size(60, 20),
                 TextAlign = ContentAlignment.MiddleRight
             };
 
             txtEndTime = new TextBox
             {
-                Location = new Point(238, 79),
+                Location = new Point(238, 47),
                 Size = new Size(90, 24),
                 Text = "--:--:--",
                 TextAlign = HorizontalAlignment.Center,
@@ -345,7 +326,7 @@ namespace MovieConverter
             lblRange = new Label
             {
                 Text = "指定範囲: --",
-                Location = new Point(338, 60),
+                Location = new Point(338, 28),
                 Size = new Size(260, 28),
                 Font = new Font("Meiryo UI", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(0, 100, 160),
@@ -354,7 +335,6 @@ namespace MovieConverter
 
             pnlCut.Controls.AddRange(new Control[]
             {
-                rbtRangeOnly, rbtFullVideo,
                 btnSetStart, lblStartLabel, txtStartTime,
                 btnSetEnd, lblEndLabel, txtEndTime,
                 lblRange
@@ -508,20 +488,33 @@ namespace MovieConverter
         // ─── ドラッグ＆ドロップ ─────────────────────────────────────
         private void SetupDragDrop()
         {
-            AllowDrop = true;
-            DragEnter += (s, e) =>
+            void OnDragEnter(object? s, DragEventArgs e)
             {
-                if (e.Data != null &&
-                    e.Data.GetDataPresent(DataFormats.FileDrop))
+                if (e.Data != null && e.Data.GetDataPresent(DataFormats.FileDrop))
                     e.Effect = DragDropEffects.Copy;
-            };
-            DragDrop += (s, e) =>
+            }
+            void OnDragDrop(object? s, DragEventArgs e)
             {
                 if (e.Data == null) return;
                 var files = e.Data.GetData(DataFormats.FileDrop) as string[];
                 if (files == null || files.Length == 0) return;
                 LoadFile(files[0]);
-            };
+            }
+
+            AllowDrop = true;
+            DragEnter += OnDragEnter;
+            DragDrop += OnDragDrop;
+
+            // WebView2 は自身でドラッグを処理するため WinForms の DragDrop が届かない。
+            // AllowExternalDrop = false（CoreWebView2 初期化後に設定）と組み合わせて
+            // WebView2 コントロール上のドロップも WinForms 側で受け取る。
+            webView2.AllowDrop = true;
+            webView2.DragEnter += OnDragEnter;
+            webView2.DragDrop += OnDragDrop;
+
+            pnlPreview.AllowDrop = true;
+            pnlPreview.DragEnter += OnDragEnter;
+            pnlPreview.DragDrop += OnDragDrop;
         }
 
         // ─── FFmpeg 存在確認 ──────────────────────────────────────────
@@ -577,8 +570,9 @@ namespace MovieConverter
 
                 webView2.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 webView2.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
-                // D&DでMP4を直接WebView2にドロップした場合、ブラウザ内再生ではなくアプリ側で読み込む
                 webView2.CoreWebView2.NavigationStarting += OnWebView2NavigationStarting;
+                // ブラウザ側のドロップ処理を無効化し、WinForms の DragDrop に委譲する
+                webView2.CoreWebView2.Settings.AllowExternalDrop = false;
 
                 // 主方式: file:// URI で player.html を直接ロード
                 // → 動画も file:// URI で読み込むため、CORS制約なしで大容量ファイルを扱える
@@ -807,15 +801,21 @@ namespace MovieConverter
             trkVolume.Enabled = true;
             btnMute.Enabled = true;
 
-            bool inRangeMode = rbtRangeOnly.Checked;
-            btnSetStart.Enabled = inRangeMode;
-            btnSetEnd.Enabled = inRangeMode;
-            txtStartTime.Enabled = inRangeMode;
-            txtEndTime.Enabled = inRangeMode;
+            // 開始・終了位置を動画全体に初期設定する（変更なければ全体変換、変更すれば範囲変換）
+            _startSeconds = 0;
+            _endSeconds = _duration;
+            txtStartTime.Text = SecondsToHms(0);
+            txtEndTime.Text = SecondsToHms(_duration);
+            UpdateRangeLabel();
+
+            btnSetStart.Enabled = true;
+            btnSetEnd.Enabled = true;
+            txtStartTime.Enabled = true;
+            txtEndTime.Enabled = true;
 
             AppendLog($"[読み込み完了] 動画時間: {SecondsToHms(_duration)}");
             UpdateConvertButton();
-            SetStatus("状態: 待機中 — 開始・終了位置を設定して「変換実行」を押してください",
+            SetStatus("状態: 待機中 — 開始・終了位置を調整して「変換実行」を押してください",
                 Color.FromArgb(60, 60, 60));
         }
 
@@ -985,11 +985,9 @@ namespace MovieConverter
                 btnConvert.Enabled = false;
                 return;
             }
-            btnConvert.Enabled = rbtFullVideo.Checked
-                ? true
-                : (_startSeconds.HasValue &&
-                   _endSeconds.HasValue &&
-                   _endSeconds.Value > _startSeconds.Value);
+            btnConvert.Enabled = _startSeconds.HasValue &&
+                                 _endSeconds.HasValue &&
+                                 _endSeconds.Value > _startSeconds.Value;
         }
 
         private async void BtnConvert_Click(object? sender, EventArgs e)
@@ -1006,7 +1004,10 @@ namespace MovieConverter
                 return;
             }
 
-            bool isFullVideo = rbtFullVideo.Checked;
+            // 開始≈0 かつ 終了≈動画時間 なら全体変換モード（-ss/-to を付けない）
+            bool isFullVideo = _startSeconds.HasValue && _endSeconds.HasValue &&
+                               _startSeconds.Value < 0.5 &&
+                               Math.Abs(_endSeconds.Value - _duration) < 0.5;
             var settings = new ConversionSettings
             {
                 InputFile = _inputFile!,
@@ -1073,21 +1074,18 @@ namespace MovieConverter
                     "ファイルを再度選択してください。");
                 return false;
             }
-            if (rbtRangeOnly.Checked)
+            if (!_startSeconds.HasValue || !_endSeconds.HasValue)
             {
-                if (!_startSeconds.HasValue || !_endSeconds.HasValue)
-                {
-                    ShowUserError("開始位置と終了位置を設定してください。",
-                        "「現在位置を開始に設定」「現在位置を終了に設定」ボタンを押して\n" +
-                        "変換したい範囲を指定してから実行してください。");
-                    return false;
-                }
-                if (_endSeconds.Value <= _startSeconds.Value)
-                {
-                    ShowUserError("終了位置が開始位置以前です。",
-                        "終了位置は開始位置より後に設定してください。");
-                    return false;
-                }
+                ShowUserError("開始位置と終了位置を設定してください。",
+                    "「現在位置を開始に設定」「現在位置を終了に設定」ボタンを押して\n" +
+                    "変換したい範囲を指定してから実行してください。");
+                return false;
+            }
+            if (_endSeconds.Value <= _startSeconds.Value)
+            {
+                ShowUserError("終了位置が開始位置以前です。",
+                    "終了位置は開始位置より後に設定してください。");
+                return false;
             }
             if (!_ffmpeg.IsAvailable)
             {
@@ -1167,25 +1165,6 @@ namespace MovieConverter
             }
         }
 
-        private void RbtConversionMode_CheckedChanged(object? sender, EventArgs e)
-        {
-            if (!rbtRangeOnly.Checked && !rbtFullVideo.Checked) return;
-            bool isFullVideo = rbtFullVideo.Checked;
-
-            // 動画全体モード時: 高速カット（-c copy）は「全体コピー」になり意味が変わるため標準に切り替える
-            if (isFullVideo && cmbQuality.SelectedIndex == 0)
-                cmbQuality.SelectedIndex = 2; // 標準
-
-            // カット位置UIの有効/無効
-            bool rangeEnabled = !isFullVideo && _videoLoaded;
-            btnSetStart.Enabled = rangeEnabled;
-            btnSetEnd.Enabled = rangeEnabled;
-            txtStartTime.Enabled = rangeEnabled;
-            txtEndTime.Enabled = rangeEnabled;
-
-            UpdateConvertButton();
-        }
-
         private void TrkVolume_Scroll(object? sender, EventArgs e)
         {
             double vol = trkVolume.Value / 100.0;
@@ -1244,9 +1223,7 @@ namespace MovieConverter
             cmbQuality.Enabled = !converting;
             cmbResolution.Enabled = !converting && cmbQuality.SelectedIndex != 0;
             btnBrowse.Enabled = !converting;
-            rbtRangeOnly.Enabled = !converting;
-            rbtFullVideo.Enabled = !converting;
-            bool rangeEnabled = !converting && _videoLoaded && rbtRangeOnly.Checked;
+            bool rangeEnabled = !converting && _videoLoaded;
             btnSetStart.Enabled = rangeEnabled;
             btnSetEnd.Enabled = rangeEnabled;
             txtStartTime.Enabled = rangeEnabled;
@@ -1259,7 +1236,6 @@ namespace MovieConverter
                 string.IsNullOrEmpty(_inputFile) ||
                 !File.Exists(_inputFile))
                 return false;
-            if (rbtFullVideo.Checked) return true;
             return _startSeconds.HasValue &&
                    _endSeconds.HasValue &&
                    _endSeconds.Value > _startSeconds.Value;
