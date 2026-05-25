@@ -3,7 +3,7 @@
 | 項目 | 内容 |
 |------|------|
 | ツール名 | 動画簡易変換ツール |
-| バージョン | v0.4.2 |
+| バージョン | v0.4.3 |
 | 初回作成日 | 2026-05-23 |
 | v0.1.1更新日 | 2026-05-23 |
 | v0.1.2更新日 | 2026-05-23 |
@@ -22,8 +22,43 @@
 | v0.4.0更新日 | 2026-05-24 |
 | v0.4.1更新日 | 2026-05-25 |
 | v0.4.2更新日 | 2026-05-25 |
+| v0.4.3更新日 | 2026-05-25 |
 | 参照ガイド | reference/guide_context.md（同梱方式） |
 | GitHub Pages | 403エラーにより参照不可 — guide_context.md で代替 |
+
+---
+
+## v0.4.3 実施した変更
+
+### 背景
+
+v0.4.1 でWebView2 未インストール時のフリーズを修正し「プレビュー不可モード」を実装したが、カット位置を目視確認できないという問題が残っていた。v0.4.3 では ffmpeg を使ったサムネイル表示によりカット位置確認を可能にする代替プレビューを実装した。
+
+v0.3.1 で WPF MediaElement による代替プレビューを実装済みだが、`<UseWpf>true</UseWpf>` により起動クラッシュが発生したため v0.3.2 で無効化した経緯がある。v0.4.3 では WPF を使わない方式（ffmpeg + PictureBox）を採用した。
+
+### 実施した変更
+
+| # | 変更対象 | 内容 |
+|---|----------|------|
+| 1 | FallbackPreviewPanel.cs | 新規追加。ffmpeg サムネイル生成によるコマ送りプレビューパネル |
+| 2 | MainForm.cs | `_previewSlot` 導入・`ShowFallbackPreview()` 追加・WebView2 失敗時フロー変更 |
+| 3 | MainForm.cs | `_fallbackPreviewActive` フラグ追加・`SetConvertingState` 更新 |
+| 4 | MainForm.cs | `LoadVideoInfoAsync` にフォールバック用 duration 更新追加 |
+| 5 | MainForm.cs | `OnFormClosing` に CleanupTempFiles 追加 |
+| 6 | MainForm.cs | タイトル v0.4.3 更新 |
+| 7 | MovieConverter.csproj | バージョン 0.4.3.0 / v0.4.3 に更新 |
+| 8 | docs/ | 全ドキュメント更新（release-note・README・test_scenarios・release_checklist・tool_design）|
+| 9 | manuals/ | user_manual・admin_manual 更新 |
+
+### 設計判断
+
+| 判断 | 理由 |
+|------|------|
+| WPF MediaElement を使わない | v0.3.1 での起動クラッシュ教訓。UseWpf=true は採用しない |
+| ffmpeg サムネイル方式を採用 | WinForms のみで実装可能。既存の ffmpeg.exe を再利用できる |
+| 動画再生なし（静止画のみ） | 実装複雑度を低く抑えつつ、カット位置確認という目的を達成できる |
+| `_previewSlot` コンテナ導入 | WebView2 と FallbackPreviewPanel を Visible 切り替えで管理するため |
+| CancellationTokenSource の置き換えパターン | 連続ナビゲーション時に前のサムネイル生成を打ち切り、最新リクエストを優先する |
 
 ---
 
