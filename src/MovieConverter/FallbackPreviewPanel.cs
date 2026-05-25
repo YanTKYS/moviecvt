@@ -138,7 +138,7 @@ namespace MovieConverter
             _txtTime.TextChanged += (s, e) =>
             {
                 _txtTime.BackColor = SystemColors.Window;
-                if (_lblStatus.Text.Contains("形式が正しくありません"))
+                if (_lblStatus.Text?.Contains("形式が正しくありません") == true)
                 {
                     _lblStatus.ForeColor = Color.FromArgb(220, 180, 60);
                     _lblStatus.Text = "";
@@ -271,7 +271,7 @@ namespace MovieConverter
         private async Task ClearErrorStatusAfterDelayAsync()
         {
             await Task.Delay(3000).ConfigureAwait(true);
-            if (_lblStatus.Text.Contains("形式が正しくありません"))
+            if (_lblStatus.Text?.Contains("形式が正しくありません") == true)
             {
                 _lblStatus.Text      = "";
                 _lblStatus.ForeColor = Color.FromArgb(220, 180, 60);
