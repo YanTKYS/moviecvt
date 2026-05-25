@@ -3,7 +3,7 @@
 | 項目 | 内容 |
 |------|------|
 | ツール名 | 動画簡易変換ツール |
-| バージョン | v0.4.0 |
+| バージョン | v0.4.1 |
 | 初回作成日 | 2026-05-23 |
 | v0.1.1更新日 | 2026-05-23 |
 | v0.1.2更新日 | 2026-05-23 |
@@ -20,8 +20,43 @@
 | v0.3.2更新日 | 2026-05-24 |
 | v0.3.3更新日 | 2026-05-24 |
 | v0.4.0更新日 | 2026-05-24 |
+| v0.4.1更新日 | 2026-05-25 |
 | 参照ガイド | reference/guide_context.md（同梱方式） |
 | GitHub Pages | 403エラーにより参照不可 — guide_context.md で代替 |
+
+---
+
+## v0.4.1 確認・修正記録
+
+### v0.4.1 対応内容
+
+#### 不具合の内容
+
+実利用環境（WebView2 ランタイム未インストール）で起動した際、動画ファイルを読み込むとアプリが「動画を読み込み中...」のまま応答しなくなる問題が発生した。
+
+#### 根本原因
+
+`WebView2VideoPlayer.InitializeAsync()` が WebView2 ランタイム不在で例外をキャッチすると `IsReady = false` のまま終わるが、その後 `LoadVideo()` が呼ばれても `if (!IsReady) return;` で即 return するだけだった。`VideoLoaded` も `VideoError` も発火しないため、`MainForm` 側は「読み込み中」のまま固まる。
+
+#### 修正内容
+
+| # | 変更対象 | 内容 |
+|---|----------|------|
+| 1 | `WebView2VideoPlayer.cs` | `_initFailed` フラグを追加。`InitializeAsync` catch / `OnInitializationCompleted` `!IsSuccess` 時にセット。`LoadVideo()` 呼び出し時に `_initFailed` なら即 `VideoError` を発火 |
+| 2 | `FfprobeRunner.cs` | `VideoInfo` レコードに `DurationSeconds`（double）を追加。ffprobe JSON の生の秒数をそのまま保持 |
+| 3 | `MainForm.cs` | `_previewUnavailableMode` フラグを追加。`OnVideoPlayerError` で `_webView2Player.IsReady == false` を検出した場合、事前変換ダイアログを出さず「プレビュー不可モード」に移行 |
+| 4 | `MainForm.cs` | `ActivateConversionWithoutPreview()` を追加。テキストボックスを有効化し、ffprobe が duration を取得済みなら自動で全体変換設定（開始=0、終了=duration）を適用 |
+| 5 | `MainForm.cs` | `LoadVideoInfoAsync()` にフック追加。ffprobe 完了時に `_previewUnavailableMode` かつ `_duration == 0` なら `_duration` を更新して `ActivateConversionWithoutPreview()` を呼ぶ（ffprobe が先に完了するタイミング差を吸収） |
+| 6 | `MainForm.cs` | `SetConvertingState()` を更新。プレビュー不可モードでは変換後もテキストボックスを有効に保つ |
+
+#### 設計判断
+
+| 判断事項 | 内容 |
+|---------|------|
+| WebView2 なしでも変換を可能にする | WebView2 はプレビュー専用であり、ffmpeg による変換とは独立している。プレビューができなくても、ffprobe が duration を取得できれば全体変換は実行可能 |
+| 事前変換ダイアログはスキップ | WebView2 が存在しない状態では事前変換（faststart）しても再度読み込みに失敗するため、ダイアログを表示しても意味がない |
+| duration 設定はタイミング差に対応 | `VideoError` は即座に発火するが ffprobe は非同期で数秒かかる。両パスで `ActivateConversionWithoutPreview()` を呼ぶことで、いずれが先に来ても正しく動作する |
+| `IsReady` で判定する | `_initFailed` を公開プロパティにする代わりに、既存の `IsReady` プロパティで init 失敗を検出。`IsReady == false` かつ `VideoError` 受信＝init 失敗と判断 |
 
 ---
 

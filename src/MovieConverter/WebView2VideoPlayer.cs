@@ -24,6 +24,7 @@ namespace MovieConverter
         private string _currentFile = string.Empty;
         private int _loadAttempt;           // 0 = file-uri（主）、1 = virtual-host（フォールバック）
         private string? _pendingLoadAfterNav;
+        private bool _initFailed;
 
         // ─── IVideoPlayer プロパティ ──────────────────────────────────
         public Control PreviewControl => _container;
@@ -84,11 +85,14 @@ namespace MovieConverter
             }
             catch (Exception ex)
             {
+                _initFailed = true;
                 _hint.Text =
                     "動画プレビューを初期化できませんでした。\n" +
                     "WebView2ランタイム（Microsoft Edge WebView2 Runtime）が\n" +
                     "インストールされているか確認してください。";
                 LogMessage?.Invoke($"[WebView2 エラー] {ex.Message}");
+                // 初期化失敗済みのままファイルが選択された場合に備えて、
+                // ここでは _currentFile が空なので VideoError は LoadVideo 側で発火する
             }
         }
 
@@ -98,7 +102,10 @@ namespace MovieConverter
         {
             if (!e.IsSuccess)
             {
+                _initFailed = true;
                 LogMessage?.Invoke($"[WebView2 初期化失敗] {e.InitializationException?.Message}");
+                if (!string.IsNullOrEmpty(_currentFile))
+                    VideoError?.Invoke("WebView2 が初期化できませんでした");
                 return;
             }
             try
@@ -136,6 +143,12 @@ namespace MovieConverter
         public void LoadVideo(string filePath)
         {
             _currentFile = filePath;
+            if (_initFailed)
+            {
+                // WebView2 が初期化失敗済み → 即座にエラーを通知して MainForm に制御を渡す
+                VideoError?.Invoke("WebView2 が初期化できませんでした");
+                return;
+            }
             if (!IsReady) return;
             LoadVideoInternal();
         }

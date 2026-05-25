@@ -78,6 +78,7 @@ namespace MovieConverter
         private double _lastProgressRatio;
         private string _activeOperationLabel = "変換中";
         private bool _showPreconvertDialog = true;
+        private bool _previewUnavailableMode;
         private readonly StringBuilder _ffmpegOutputBuffer = new();
         private readonly object _bufferLock = new();
 
@@ -149,7 +150,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.4.0";
+            Text = "動画簡易変換ツール  v0.4.1";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -641,6 +642,7 @@ namespace MovieConverter
             _showPreconvertDialog = allowPreconvertDialog;
             _inputFile = filePath;
             _videoLoaded = false;
+            _previewUnavailableMode = false;
             _startSeconds = null;
             _endSeconds = null;
             _currentTime = 0;
@@ -698,19 +700,32 @@ namespace MovieConverter
         private void OnVideoPlayerError(string errorMessage)
         {
             // WebView2VideoPlayer 内でファイル-uri → virtual-host フォールバックは完結済み。
-            // このハンドラは「両方式とも失敗した」場合にのみ呼ばれる。
+            // このハンドラは「両方式とも失敗した」または「WebView2 が初期化できなかった」場合に呼ばれる。
             _videoLoaded = false;
             btnPlayPause.Enabled = false;
             btnBack5.Enabled = false;
             btnForward5.Enabled = false;
             trkVolume.Enabled = false;
             btnMute.Enabled = false;
+            trkSeek.Enabled = false;
             btnSetStart.Enabled = false;
             btnSetEnd.Enabled = false;
             txtStartTime.Enabled = false;
             txtEndTime.Enabled = false;
-            trkSeek.Enabled = false;
             UpdateConvertButton();
+
+            // WebView2 が初期化できていない場合（未インストール等）→ プレビュー不可モードで変換のみ有効化
+            if (!_webView2Player.IsReady && !string.IsNullOrEmpty(_inputFile))
+            {
+                _previewUnavailableMode = true;
+                SetStatus("状態: プレビュー不可 — 開始・終了位置を入力して「変換実行」を押してください",
+                    Color.FromArgb(160, 80, 0));
+                AppendLog("[WebView2 未インストール] プレビューは利用できません。変換のみ実行できます。");
+                AppendLog("  → WebView2 ランタイムが必要です（管理者に相談してください）。");
+                AppendLog("  → 変換は実行できます。開始・終了位置を手入力するか、このまま全体変換できます。");
+                ActivateConversionWithoutPreview();
+                return;
+            }
 
             // 事前変換ダイアログを案内する（ユーザー選択ファイルのみ、事前変換後ファイルは再案内しない）
             if (_showPreconvertDialog && !string.IsNullOrEmpty(_inputFile))
@@ -729,6 +744,36 @@ namespace MovieConverter
             AppendLog("[プレビュー失敗] WebView2 でこの動画を表示できませんでした。");
             AppendLog("  確認方法: Microsoft Edge に同じ MP4 ファイルをドラッグして再生できるか確認してください。");
             AppendLog("  解決しない場合は管理者またはDX担当に相談してください。");
+        }
+
+        private void ActivateConversionWithoutPreview()
+        {
+            // テキストボックスを有効化して手入力できるようにする
+            txtStartTime.Enabled = true;
+            txtEndTime.Enabled = true;
+            // 「現在位置を設定」ボタンはプレビューなしで使えないため無効のまま
+
+            if (_duration > 0)
+            {
+                // ffprobe が duration を取得済みの場合は全体変換設定を自動適用
+                _startSeconds = 0;
+                _endSeconds = _duration;
+                txtStartTime.Text = SecondsToHms(0);
+                txtEndTime.Text = SecondsToHms(_duration);
+                lblTotalTime.Text = SecondsToHms(_duration);
+                UpdateRangeLabel();
+                AppendLog($"  動画時間: {SecondsToHms(_duration)}  開始・終了位置を全体変換で自動設定しました。");
+                AppendLog("  必要に応じて開始・終了位置を手入力して変更できます。");
+            }
+            else
+            {
+                // ffprobe がまだ取得中 → 後で LoadVideoInfoAsync 完了時に再適用される
+                txtStartTime.Text = "00:00:00";
+                txtEndTime.Text = "00:00:00";
+                AppendLog("  動画の長さを取得中です。取得後に自動設定します。");
+                AppendLog("  または「終了位置」に動画の長さを手入力してください（例: 01:10:34）。");
+            }
+            UpdateConvertButton();
         }
 
         private bool ShowPreconvertConsentDialog()
@@ -1337,9 +1382,10 @@ namespace MovieConverter
             cmbQuality.Enabled = !converting;
             cmbResolution.Enabled = !converting && cmbQuality.SelectedIndex != 0;
             btnBrowse.Enabled = !converting;
-            bool rangeEnabled = !converting && _videoLoaded;
-            btnSetStart.Enabled = rangeEnabled;
-            btnSetEnd.Enabled = rangeEnabled;
+            // プレビュー不可モードではテキスト入力のみ有効（「現在位置を設定」ボタンは使えない）
+            bool rangeEnabled = !converting && (_videoLoaded || _previewUnavailableMode);
+            btnSetStart.Enabled = !converting && _videoLoaded;
+            btnSetEnd.Enabled = !converting && _videoLoaded;
             txtStartTime.Enabled = rangeEnabled;
             txtEndTime.Enabled = rangeEnabled;
         }
@@ -1378,6 +1424,13 @@ namespace MovieConverter
                 if (!string.IsNullOrEmpty(info.FileSize))   parts.Add($"サイズ: {info.FileSize}");
                 if (!string.IsNullOrEmpty(info.Bitrate))    parts.Add($"ビットレート: {info.Bitrate}");
                 SetVideoInfoText(string.Join("  /  ", parts), Color.FromArgb(80, 80, 80));
+
+                // プレビュー不可モードで duration がまだ未設定の場合、ffprobe の値で自動設定する
+                if (_previewUnavailableMode && info.DurationSeconds > 0 && _duration <= 0)
+                {
+                    _duration = info.DurationSeconds;
+                    ActivateConversionWithoutPreview();
+                }
             }
             catch
             {
