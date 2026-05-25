@@ -11,6 +11,7 @@ namespace MovieConverter
 {
     public record VideoInfo(
         string Duration,
+        double DurationSeconds,
         string Resolution,
         string VideoCodec,
         string AudioCodec,
@@ -98,6 +99,7 @@ namespace MovieConverter
 
                 string duration = "", resolution = "", videoCodec = "",
                        audioCodec = "", frameRate = "", fileSize = "", bitrate = "";
+                double durationSeconds = 0;
 
                 if (root.TryGetProperty("streams", out var streams))
                 {
@@ -122,7 +124,10 @@ namespace MovieConverter
                                 stream.TryGetProperty("duration", out var sd) &&
                                 double.TryParse(sd.GetString(), NumberStyles.Float,
                                     CultureInfo.InvariantCulture, out double vs))
+                            {
                                 duration = SecondsToHms(vs);
+                                durationSeconds = vs;
+                            }
                         }
                         else if (codecType == "audio" && string.IsNullOrEmpty(audioCodec))
                         {
@@ -138,7 +143,10 @@ namespace MovieConverter
                         format.TryGetProperty("duration", out var fd) &&
                         double.TryParse(fd.GetString(), NumberStyles.Float,
                             CultureInfo.InvariantCulture, out double fs))
+                    {
                         duration = SecondsToHms(fs);
+                        durationSeconds = fs;
+                    }
 
                     if (format.TryGetProperty("size", out var sz) &&
                         long.TryParse(sz.GetString(), out long bytes))
@@ -149,7 +157,7 @@ namespace MovieConverter
                         bitrate = FormatBitrate(bps);
                 }
 
-                return new VideoInfo(duration, resolution, videoCodec, audioCodec,
+                return new VideoInfo(duration, durationSeconds, resolution, videoCodec, audioCodec,
                                      frameRate, fileSize, bitrate);
             }
             catch { return null; }
