@@ -156,7 +156,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.4.3";
+            Text = "動画簡易変換ツール  v0.4.4";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -674,6 +674,13 @@ namespace MovieConverter
             _isPlaying = false;
             UpdatePlayPauseButton();
 
+            // 代替プレビューが表示中なら標準プレイヤー表示に戻す
+            // （新ファイルで WebView2 が成功した場合は標準プレイヤーを表示したままにする。
+            //   失敗した場合は OnVideoPlayerError → ShowFallbackPreview で再び切り替わる）
+            _player.PreviewControl.Visible = true;
+            if (_fallbackPreview != null)
+                _fallbackPreview.Visible = false;
+
             var fi = new FileInfo(filePath);
             lblFilePath.Text = $"ファイル: {fi.FullName}";
             lblFileSize.Text = $"サイズ: {FormatFileSize(fi.Length)}";
@@ -776,7 +783,8 @@ namespace MovieConverter
             // テキストボックスを有効化して手入力できるようにする
             txtStartTime.Enabled = true;
             txtEndTime.Enabled = true;
-            // 「現在位置を設定」ボタンはプレビューなしで使えないため無効のまま
+            // btnSetStart/End: _previewUnavailableMode では無効のまま。
+            // _fallbackPreviewActive では ShowFallbackPreview() が先行して有効化済み。
 
             if (_duration > 0)
             {

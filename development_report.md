@@ -3,7 +3,7 @@
 | 項目 | 内容 |
 |------|------|
 | ツール名 | 動画簡易変換ツール |
-| バージョン | v0.4.3 |
+| バージョン | v0.4.4 |
 | 初回作成日 | 2026-05-23 |
 | v0.1.1更新日 | 2026-05-23 |
 | v0.1.2更新日 | 2026-05-23 |
@@ -23,8 +23,40 @@
 | v0.4.1更新日 | 2026-05-25 |
 | v0.4.2更新日 | 2026-05-25 |
 | v0.4.3更新日 | 2026-05-25 |
+| v0.4.4更新日 | 2026-05-25 |
 | 参照ガイド | reference/guide_context.md（同梱方式） |
 | GitHub Pages | 403エラーにより参照不可 — guide_context.md で代替 |
+
+---
+
+## v0.4.4 実施した変更
+
+### 背景
+
+v0.4.3 で代替プレビュー（ffmpeg サムネイル方式）を追加したが、以下の問題が残っていた。
+
+- **代替プレビュー使用後に別ファイルを読み込んだとき、標準プレビューが正しく表示されない**: `LoadFile()` で `_fallbackPreviewActive = false` にリセットしていたが、`_fallbackPreview.Visible = false` と `_player.PreviewControl.Visible = true` のリセットが漏れていた。WebView2 有り環境で「ファイルA → 代替プレビューになるファイルB → ファイルC（通常再生可）」の順で読み込むと、ファイルCがWebView2で正常に再生できる場合でも代替プレビューパネルが前面に表示されたままになる可能性があった。
+
+また、ドキュメントに「標準プレビューは動画再生、代替プレビューはサムネイル表示のみ」の仕様が不明確な箇所があったため、整合させた。
+
+### 実施した変更
+
+| # | 変更対象 | 内容 |
+|---|----------|------|
+| 1 | MainForm.cs | `LoadFile()` で新規ファイル読み込み時にプレビュー表示をリセット（バグ修正） |
+| 2 | MainForm.cs | `ActivateConversionWithoutPreview()` のコメント修正（_fallbackPreviewActive パスの説明を追記） |
+| 3 | MainForm.cs | タイトル v0.4.4 更新 |
+| 4 | MovieConverter.csproj | バージョン 0.4.4.0 / v0.4.4 に更新 |
+| 5 | README.md | プレビュー方式の比較表追加・v0.4.3 の WPF 注記を削除 |
+| 6 | manuals/user_manual.md | プレビュー種類の説明追加（標準＝動画再生・代替＝サムネイルのみ） |
+| 7 | manuals/admin_manual.md | プレビュー方式比較表追加・WPF 注記更新 |
+| 8 | docs/test_scenarios.md | Section 21 追加（代替プレビュー安定化確認シナリオ） |
+| 9 | docs/release_checklist.md | v0.4.4 チェック項目追加 |
+
+### 設計判断
+
+- **`_player.PreviewControl.Visible = true` のリセット**: `LoadFile()` の先頭付近で実施する。WebView2 エラーが発生した場合は `OnVideoPlayerError → ShowFallbackPreview()` で再び切り替わるため、この楽観的リセットは安全。
+- **`ActivateConversionWithoutPreview()` の責務**: このメソッドは `_previewUnavailableMode` と `_fallbackPreviewActive` の両パスから呼ばれる。`_previewUnavailableMode` では btnSetStart/End は無効のまま。`_fallbackPreviewActive` では `ShowFallbackPreview()` が先行して有効化済み。この違いをコメントに明記した。
 
 ---
 
