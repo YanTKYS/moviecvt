@@ -3,7 +3,7 @@
 | 項目 | 内容 |
 |------|------|
 | ツール名 | 動画簡易変換ツール |
-| バージョン | v0.4.1 |
+| バージョン | v0.4.2 |
 | 初回作成日 | 2026-05-23 |
 | v0.1.1更新日 | 2026-05-23 |
 | v0.1.2更新日 | 2026-05-23 |
@@ -21,8 +21,57 @@
 | v0.3.3更新日 | 2026-05-24 |
 | v0.4.0更新日 | 2026-05-24 |
 | v0.4.1更新日 | 2026-05-25 |
+| v0.4.2更新日 | 2026-05-25 |
 | 参照ガイド | reference/guide_context.md（同梱方式） |
 | GitHub Pages | 403エラーにより参照不可 — guide_context.md で代替 |
+
+---
+
+## v0.4.2 確認・修正記録
+
+### v0.4.2 対応内容
+
+#### 背景・目的
+
+v0.4.1 で実利用環境への対応（WebView2未導入時のフリーズ修正）を行った。ここまでの実機確認を通じ、以下の問題が配布後の問い合わせの原因となっていた。
+
+- ffmpeg.exe のDLL不足（終了コード 0xC0000135）
+- ffprobe.exe の配置有無
+- WebView2 Runtime 未導入
+- 出力先パスへの書き込み権限
+
+v0.4.2 では、配布後に問い合わせがあった際の原因切り分けを容易にするため、環境診断（動作確認）機能と起動時ログを追加した。
+
+#### 実施した変更
+
+| # | 変更対象 | 内容 |
+|---|----------|------|
+| 1 | `EnvironmentDiagnostics.cs` | 新規追加。`DiagnosticLevel`（Ok/Warning/Error）・`DiagnosticItem` レコード・`EnvironmentDiagnostics` クラスを実装。WebView2・ffmpeg・ffprobe・書き込み権限・動画ファイルをチェックし、結果リストと保存用テキストを返す |
+| 2 | `WebView2VideoPlayer.cs` | `public bool InitFailed => _initFailed;` プロパティを追加（診断から参照用） |
+| 3 | `MainForm.cs` | 「動作確認」ボタン（`btnDiagnostic`）をログ欄上部に追加。`BtnDiagnostic_Click` で `EnvironmentDiagnostics.RunAllAsync()` を呼び出し結果ダイアログを表示 |
+| 4 | `MainForm.cs` | `ShowDiagnosticResultDialog` を追加。RichTextBox で診断結果を色分け表示。「診断結果を保存」ボタンで `logs/diagnostic_{timestamp}.txt` を保存 |
+| 5 | `Program.cs` | `WriteStartupInfo()` を追加。起動時に `logs/startup_latest.log` を生成。バージョン・実行フォルダ・OS・WebView2・ffmpeg・ffprobe の状況を記録 |
+| 6 | `MovieConverter.csproj` | バージョンを 0.4.2.0 / v0.4.2 に更新 |
+| 7 | ドキュメント各種 | README・user_manual・admin_manual・test_scenarios・release_checklist・release-note・development_report を v0.4.2 対応に更新 |
+
+#### 設計判断
+
+| 判断事項 | 内容 |
+|---------|------|
+| 「動作確認」ボタンの名称 | 「環境診断」より一般職員に分かりやすい「動作確認」を採用 |
+| 診断ロジックを別ファイル（`EnvironmentDiagnostics.cs`）に分離 | MainForm.cs が既に 1700 行超のため、診断ロジックを独立させて保守性を確保 |
+| WebView2 検出に `CoreWebView2Environment.GetAvailableBrowserVersionString()` を使用 | WebView2 を初期化せずに Registry ベースで確認できる静的メソッド。STA スレッドでの呼び出しで正常動作する |
+| ffmpeg/ffprobe の起動確認は 5 秒タイムアウト | 診断ダイアログ表示まで長時間待たせない。`CancellationTokenSource.CreateLinkedTokenSource` でオーバーオールの 30 秒タイムアウトとも連携 |
+| 起動時ログは `startup_latest.log`（上書き）方式 | 毎回のログ蓄積を避けつつ、最新の環境情報を常に参照可能にする。クラッシュログ（`startup_error_*.log`）とは別ファイルで役割を明確化 |
+| 診断結果の保存先は `logs/` フォルダ固定 | ログ保存（入力ファイルの場所優先）とは異なり、診断結果は管理者向け情報のため常に `logs/` に保存する |
+
+#### 未対応事項
+
+| 事項 | 判断 |
+|------|------|
+| ffprobe による動画情報取得の診断 | 診断項目の要件には含まれていたが、既存の `LoadVideoInfoAsync` で機能しているため重複実装を避けた。ffprobe の起動確認（`-version`）で代替 |
+| WebView2 初期化の完了待ちと連携 | 診断は WebView2 のインストール有無を API で確認するため、`IsReady` フラグとの連携は不要と判断 |
+| 出力先フォルダ選択 | 今バージョン対象外 |
 
 ---
 
