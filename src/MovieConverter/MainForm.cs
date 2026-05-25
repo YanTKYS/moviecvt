@@ -24,6 +24,11 @@ namespace MovieConverter
         private WebView2VideoPlayer _webView2Player = null!;
         private IVideoPlayer _player = null!;
 
+        // プレビュースロット（WebView2 または代替プレビューを切り替えるコンテナ）
+        private Panel _previewSlot = null!;
+        private FallbackPreviewPanel? _fallbackPreview;
+        private bool _fallbackPreviewActive;
+
         private Panel pnlSeek = null!;
         private Label lblCurrentTime = null!;
         private TrackBar trkSeek = null!;
@@ -151,7 +156,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.4.2";
+            Text = "動画簡易変換ツール  v0.4.3";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -223,8 +228,15 @@ namespace MovieConverter
             });
             tableLayout.Controls.Add(pnlFile, 0, 0);
 
-            // ── Row 1: 動画プレビュー（WebView2 標準方式） ──
-            tableLayout.Controls.Add(_player.PreviewControl, 0, 1);
+            // ── Row 1: プレビュースロット（WebView2 または代替プレビューを切り替え） ──
+            _previewSlot = new Panel
+            {
+                Dock      = DockStyle.Fill,
+                Margin    = new Padding(0, 2, 0, 2),
+                BackColor = Color.FromArgb(30, 30, 30)
+            };
+            _previewSlot.Controls.Add(_player.PreviewControl);
+            tableLayout.Controls.Add(_previewSlot, 0, 1);
 
             // ── Row 2: シークバー ──
             pnlSeek = CreateSectionPanel();
@@ -654,6 +666,7 @@ namespace MovieConverter
             _inputFile = filePath;
             _videoLoaded = false;
             _previewUnavailableMode = false;
+            _fallbackPreviewActive = false;
             _startSeconds = null;
             _endSeconds = null;
             _currentTime = 0;
@@ -725,15 +738,16 @@ namespace MovieConverter
             txtEndTime.Enabled = false;
             UpdateConvertButton();
 
-            // WebView2 が初期化できていない場合（未インストール等）→ プレビュー不可モードで変換のみ有効化
+            // WebView2 が初期化できていない場合（未インストール等）→ 代替プレビューに切り替える
             if (!_webView2Player.IsReady && !string.IsNullOrEmpty(_inputFile))
             {
-                _previewUnavailableMode = true;
-                SetStatus("状態: プレビュー不可 — 開始・終了位置を入力して「変換実行」を押してください",
+                _fallbackPreviewActive = true;
+                SetStatus("状態: 代替プレビューを使用しています（サムネイル表示）",
                     Color.FromArgb(160, 80, 0));
-                AppendLog("[WebView2 未インストール] プレビューは利用できません。変換のみ実行できます。");
-                AppendLog("  → WebView2 ランタイムが必要です（管理者に相談してください）。");
-                AppendLog("  → 変換は実行できます。開始・終了位置を手入力するか、このまま全体変換できます。");
+                AppendLog("[プレビュー] WebView2 が使えないため、代替プレビューに切り替えます。");
+                AppendLog("  → ffmpeg のサムネイル表示でカット位置を確認できます。");
+                AppendLog("  → ナビゲーションボタンで位置を移動し、「現在位置を開始に設定」等を使ってください。");
+                ShowFallbackPreview();
                 ActivateConversionWithoutPreview();
                 return;
             }
@@ -772,6 +786,7 @@ namespace MovieConverter
                 txtStartTime.Text = SecondsToHms(0);
                 txtEndTime.Text = SecondsToHms(_duration);
                 lblTotalTime.Text = SecondsToHms(_duration);
+                trkSeek.Maximum = Math.Max(1, (int)_duration);
                 UpdateRangeLabel();
                 AppendLog($"  動画時間: {SecondsToHms(_duration)}  開始・終了位置を全体変換で自動設定しました。");
                 AppendLog("  必要に応じて開始・終了位置を手入力して変更できます。");
@@ -785,6 +800,39 @@ namespace MovieConverter
                 AppendLog("  または「終了位置」に動画の長さを手入力してください（例: 01:10:34）。");
             }
             UpdateConvertButton();
+        }
+
+        private void ShowFallbackPreview()
+        {
+            _player.PreviewControl.Visible = false;
+
+            if (_fallbackPreview == null)
+            {
+                _fallbackPreview = new FallbackPreviewPanel(_ffmpeg.FfmpegPath)
+                {
+                    Dock = DockStyle.Fill
+                };
+                _fallbackPreview.TimeChanged += t =>
+                {
+                    _currentTime = t;
+                    lblCurrentTime.Text = SecondsToHms(t);
+                    if (_duration > 0)
+                    {
+                        _isSeekBarUpdating = true;
+                        trkSeek.Value = Math.Max(trkSeek.Minimum,
+                            Math.Min((int)Math.Min(t, _duration), trkSeek.Maximum));
+                        _isSeekBarUpdating = false;
+                    }
+                };
+                _previewSlot.Controls.Add(_fallbackPreview);
+            }
+
+            _fallbackPreview.Visible = true;
+            btnSetStart.Enabled = true;
+            btnSetEnd.Enabled   = true;
+
+            if (!string.IsNullOrEmpty(_inputFile))
+                _fallbackPreview.LoadVideo(_inputFile, _duration);
         }
 
         private bool ShowPreconvertConsentDialog()
@@ -1388,17 +1436,20 @@ namespace MovieConverter
 
         private void SetConvertingState(bool converting)
         {
-            btnConvert.Enabled = !converting && ValidateCanConvertSilent();
-            btnCancel.Enabled = converting;
-            cmbQuality.Enabled = !converting;
+            btnConvert.Enabled    = !converting && ValidateCanConvertSilent();
+            btnCancel.Enabled     = converting;
+            cmbQuality.Enabled    = !converting;
             cmbResolution.Enabled = !converting && cmbQuality.SelectedIndex != 0;
-            btnBrowse.Enabled = !converting;
-            // プレビュー不可モードではテキスト入力のみ有効（「現在位置を設定」ボタンは使えない）
-            bool rangeEnabled = !converting && (_videoLoaded || _previewUnavailableMode);
-            btnSetStart.Enabled = !converting && _videoLoaded;
-            btnSetEnd.Enabled = !converting && _videoLoaded;
+            btnBrowse.Enabled     = !converting;
+
+            bool rangeEnabled = !converting &&
+                (_videoLoaded || _previewUnavailableMode || _fallbackPreviewActive);
+            // 代替プレビューモードでは「現在位置を設定」ボタンも有効（TimeChanged で位置を更新済み）
+            btnSetStart.Enabled  = !converting && (_videoLoaded || _fallbackPreviewActive);
+            btnSetEnd.Enabled    = !converting && (_videoLoaded || _fallbackPreviewActive);
             txtStartTime.Enabled = rangeEnabled;
-            txtEndTime.Enabled = rangeEnabled;
+            txtEndTime.Enabled   = rangeEnabled;
+            _fallbackPreview?.SetConvertingState(converting);
         }
 
         private bool ValidateCanConvertSilent()
@@ -1441,6 +1492,16 @@ namespace MovieConverter
                 {
                     _duration = info.DurationSeconds;
                     ActivateConversionWithoutPreview();
+                }
+                // 代替プレビューモードで duration が確定した場合
+                if (_fallbackPreviewActive && info.DurationSeconds > 0)
+                {
+                    if (_duration <= 0)
+                    {
+                        _duration = info.DurationSeconds;
+                        ActivateConversionWithoutPreview();
+                    }
+                    _fallbackPreview?.SetDuration(info.DurationSeconds);
                 }
             }
             catch
@@ -1959,6 +2020,7 @@ namespace MovieConverter
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             _cancelSource?.Cancel();
+            _fallbackPreview?.CleanupTempFiles();
             base.OnFormClosing(e);
         }
     }
