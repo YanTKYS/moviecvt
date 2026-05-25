@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Windows.Forms;
 
 namespace MovieConverter
@@ -16,7 +17,50 @@ namespace MovieConverter
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            WriteStartupInfo();
             Application.Run(new MainForm());
+        }
+
+        internal static void WriteStartupInfo()
+        {
+            try
+            {
+                string appDir = Path.GetDirectoryName(Environment.ProcessPath)
+                    ?? AppContext.BaseDirectory;
+                string logDir = Path.Combine(appDir, "logs");
+                Directory.CreateDirectory(logDir);
+                string logPath = Path.Combine(logDir, "startup_latest.log");
+
+                string version = Assembly.GetExecutingAssembly()
+                    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                    ?.InformationalVersion ?? "unknown";
+
+                string ffmpegPath  = Path.Combine(appDir, "bin", "ffmpeg", "ffmpeg.exe");
+                string ffprobePath = Path.Combine(appDir, "bin", "ffmpeg", "ffprobe.exe");
+
+                string webView2Status;
+                try
+                {
+                    webView2Status = Microsoft.Web.WebView2.Core.CoreWebView2Environment
+                        .GetAvailableBrowserVersionString() ?? "バージョン不明";
+                }
+                catch
+                {
+                    webView2Status = "未インストール";
+                }
+
+                var sb = new StringBuilder();
+                sb.AppendLine($"起動日時           : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                sb.AppendLine($"アプリバージョン    : {version}");
+                sb.AppendLine($"実行フォルダ        : {appDir}");
+                sb.AppendLine($"OS                 : {Environment.OSVersion}");
+                sb.AppendLine($"WebView2 Runtime   : {webView2Status}");
+                sb.AppendLine($"ffmpeg.exe         : {(File.Exists(ffmpegPath) ? "配置済み" : "未配置")} ({ffmpegPath})");
+                sb.AppendLine($"ffprobe.exe        : {(File.Exists(ffprobePath) ? "配置済み" : "未配置")} ({ffprobePath})");
+
+                File.WriteAllText(logPath, sb.ToString(), Encoding.UTF8);
+            }
+            catch { }
         }
 
         private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)

@@ -29,6 +29,7 @@ namespace MovieConverter
         // ─── IVideoPlayer プロパティ ──────────────────────────────────
         public Control PreviewControl => _container;
         public bool IsReady { get; private set; }
+        public bool InitFailed => _initFailed;
 
         // ─── IVideoPlayer イベント ────────────────────────────────────
         public event Action<double>? VideoLoaded;

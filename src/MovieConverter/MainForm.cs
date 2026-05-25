@@ -59,6 +59,7 @@ namespace MovieConverter
         private Label lblStatus = null!;
 
         private Button btnSaveLog = null!;
+        private Button btnDiagnostic = null!;
         private TextBox txtLog = null!;
 
         // ─── 状態 ────────────────────────────────────────────────────
@@ -150,7 +151,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.4.1";
+            Text = "動画簡易変換ツール  v0.4.2";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -524,7 +525,17 @@ namespace MovieConverter
             };
             btnSaveLog.Click += BtnSaveLog_Click;
 
-            pnlLogHeader.Controls.Add(btnSaveLog);
+            btnDiagnostic = new Button
+            {
+                Text = "動作確認",
+                Location = new Point(110, 2),
+                Size = new Size(100, 24),
+                UseVisualStyleBackColor = true,
+                Font = new Font("Meiryo UI", 8.5f)
+            };
+            btnDiagnostic.Click += BtnDiagnostic_Click;
+
+            pnlLogHeader.Controls.AddRange(new Control[] { btnSaveLog, btnDiagnostic });
             tableLayout.Controls.Add(pnlLogHeader, 0, 7);
 
             // ── Row 8: ログ ──
@@ -1741,6 +1752,207 @@ namespace MovieConverter
             string logsDir = Path.Combine(appDir, "logs");
             Directory.CreateDirectory(logsDir);
             return logsDir;
+        }
+
+        // ─── 動作確認（環境診断）────────────────────────────────────────
+        private async void BtnDiagnostic_Click(object? sender, EventArgs e)
+        {
+            btnDiagnostic.Enabled = false;
+            SetStatus("状態: 動作確認中...", Color.FromArgb(0, 100, 180));
+            AppendLog($"[動作確認] {DateTime.Now:HH:mm:ss} — 環境確認を開始します...");
+
+            string appDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+            var diagnostics = new EnvironmentDiagnostics(
+                appDir,
+                _ffmpeg.FfmpegPath,
+                _ffprobe.FfprobePath,
+                _inputFile);
+
+            List<DiagnosticItem>? results = null;
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                results = await diagnostics.RunAllAsync(cts.Token);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[動作確認] エラー: {ex.Message}");
+                SetStatus("状態: 待機中", Color.FromArgb(60, 60, 60));
+                btnDiagnostic.Enabled = true;
+                return;
+            }
+
+            int errorCount = 0, warnCount = 0;
+            foreach (var item in results)
+            {
+                if (item.Level == DiagnosticLevel.Error) errorCount++;
+                else if (item.Level == DiagnosticLevel.Warning) warnCount++;
+            }
+
+            if (errorCount > 0)
+            {
+                AppendLog($"[動作確認] 完了 — {errorCount} 件の問題があります");
+                SetStatus($"状態: 動作確認完了 — {errorCount} 件の問題があります", Color.OrangeRed);
+            }
+            else if (warnCount > 0)
+            {
+                AppendLog($"[動作確認] 完了 — {warnCount} 件の注意事項があります");
+                SetStatus($"状態: 動作確認完了 — 注意事項 {warnCount} 件", Color.FromArgb(160, 80, 0));
+            }
+            else
+            {
+                AppendLog("[動作確認] 完了 — すべて正常です");
+                SetStatus("状態: 動作確認完了 — 正常", Color.FromArgb(0, 120, 60));
+            }
+
+            btnDiagnostic.Enabled = true;
+            ShowDiagnosticResultDialog(results, diagnostics);
+        }
+
+        private void ShowDiagnosticResultDialog(
+            List<DiagnosticItem> items, EnvironmentDiagnostics diagnostics)
+        {
+            int errorCount = 0, warnCount = 0;
+            foreach (var item in items)
+            {
+                if (item.Level == DiagnosticLevel.Error) errorCount++;
+                else if (item.Level == DiagnosticLevel.Warning) warnCount++;
+            }
+
+            string summaryText;
+            Color summaryColor;
+            if (errorCount > 0)
+            {
+                summaryText = $"× {errorCount} 件の問題が見つかりました。管理者に相談してください。";
+                summaryColor = Color.OrangeRed;
+            }
+            else if (warnCount > 0)
+            {
+                summaryText = $"△ {warnCount} 件の注意事項があります。";
+                summaryColor = Color.FromArgb(180, 100, 0);
+            }
+            else
+            {
+                summaryText = "✓ すべての確認が正常です。";
+                summaryColor = Color.FromArgb(0, 120, 60);
+            }
+
+            using var dlg = new Form
+            {
+                Text = "動作確認",
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(580, 480),
+                Font = new Font("Meiryo UI", 9f),
+                BackColor = Color.White
+            };
+
+            var lblSummary = new Label
+            {
+                Text = summaryText,
+                Location = new Point(16, 12),
+                Size = new Size(540, 24),
+                Font = new Font("Meiryo UI", 10f, FontStyle.Bold),
+                ForeColor = summaryColor
+            };
+
+            var rtb = new RichTextBox
+            {
+                Location = new Point(16, 44),
+                Size = new Size(540, 356),
+                ReadOnly = true,
+                BackColor = Color.FromArgb(250, 250, 250),
+                Font = new Font("Consolas", 9f),
+                WordWrap = false,
+                ScrollBars = RichTextBoxScrollBars.Vertical,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+
+            foreach (var item in items)
+            {
+                Color levelColor = item.Level switch
+                {
+                    DiagnosticLevel.Ok      => Color.FromArgb(0, 130, 60),
+                    DiagnosticLevel.Warning => Color.FromArgb(180, 100, 0),
+                    DiagnosticLevel.Error   => Color.OrangeRed,
+                    _                       => Color.Black
+                };
+                string mark = item.Level switch
+                {
+                    DiagnosticLevel.Ok      => "[ OK ]",
+                    DiagnosticLevel.Warning => "[注意]",
+                    DiagnosticLevel.Error   => "[ NG ]",
+                    _                       => "[    ]"
+                };
+
+                rtb.SelectionFont  = new Font("Consolas", 9f, FontStyle.Bold);
+                rtb.SelectionColor = levelColor;
+                rtb.AppendText($"{mark}  {item.Label}: {item.StatusText}\n");
+
+                if (!string.IsNullOrEmpty(item.Detail))
+                {
+                    rtb.SelectionFont  = new Font("Consolas", 9f);
+                    rtb.SelectionColor = Color.FromArgb(80, 80, 80);
+                    rtb.AppendText($"         {item.Detail}\n");
+                }
+                if (!string.IsNullOrEmpty(item.Guidance))
+                {
+                    rtb.SelectionFont  = new Font("Consolas", 9f);
+                    rtb.SelectionColor = Color.FromArgb(0, 80, 160);
+                    rtb.AppendText($"         → {item.Guidance}\n");
+                }
+                rtb.SelectionColor = Color.Black;
+                rtb.AppendText("\n");
+            }
+            rtb.SelectionStart = 0;
+            rtb.ScrollToCaret();
+
+            var btnSave = new Button
+            {
+                Text = "診断結果を保存",
+                Location = new Point(16, 420),
+                Size = new Size(130, 30),
+                UseVisualStyleBackColor = true
+            };
+            btnSave.Click += (s, e) =>
+            {
+                string text = diagnostics.FormatAsText(items);
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string logsDir = GetLogsDir();
+                string savePath = Path.Combine(logsDir, $"diagnostic_{timestamp}.txt");
+                try
+                {
+                    File.WriteAllText(savePath, text, Encoding.UTF8);
+                    AppendLog($"[動作確認] 診断結果を保存しました: {savePath}");
+                    if (MessageBox.Show(
+                            $"診断結果を保存しました。\n\n{savePath}\n\nフォルダを開きますか？",
+                            "保存完了",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Information) == DialogResult.Yes)
+                    {
+                        try { Process.Start("explorer.exe", $"\"{logsDir}\""); } catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ShowUserError("保存に失敗しました", $"保存先: {savePath}\n\n{ex.Message}");
+                }
+            };
+
+            var btnClose = new Button
+            {
+                Text = "閉じる",
+                DialogResult = DialogResult.OK,
+                Location = new Point(474, 420),
+                Size = new Size(88, 30),
+                UseVisualStyleBackColor = true
+            };
+
+            dlg.AcceptButton = btnClose;
+            dlg.Controls.AddRange(new Control[] { lblSummary, rtb, btnSave, btnClose });
+            dlg.ShowDialog(this);
         }
 
         // ─── フォームクローズ ──────────────────────────────────────────
