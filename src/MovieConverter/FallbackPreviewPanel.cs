@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -50,6 +51,8 @@ namespace MovieConverter
         // ─── イベント ────────────────────────────────────────────────
         /// <summary>ナビゲーション操作で現在位置が変化したとき発火する。引数: 秒。</summary>
         public event Action<double>? TimeChanged;
+        /// <summary>診断メッセージ（ffmpeg エラー等）を通知する。</summary>
+        public event Action<string>? LogMessage;
 
         public double CurrentTime => _currentTime;
 
@@ -306,7 +309,14 @@ namespace MovieConverter
         // ─── サムネイル生成 ───────────────────────────────────────────
         private async Task GenerateThumbnailAsync(double seconds)
         {
-            if (_videoFile == null || !File.Exists(_ffmpegPath)) return;
+            if (_videoFile == null) return;
+            if (!File.Exists(_ffmpegPath))
+            {
+                LogMessage?.Invoke("[代替プレビュー] ffmpeg.exe が見つかりません。サムネイルを生成できません。");
+                _lblStatus.ForeColor = Color.FromArgb(255, 100, 100);
+                _lblStatus.Text      = "⚠ ffmpeg.exe が見つかりません";
+                return;
+            }
 
             _thumbCts?.Cancel();
             var cts = new CancellationTokenSource();
@@ -314,9 +324,10 @@ namespace MovieConverter
             var ct = cts.Token;
 
             _generating = true;
+            bool succeeded = false;
             SetButtonsEnabled(false);
             _lblStatus.ForeColor = Color.FromArgb(220, 180, 60);
-            _lblStatus.Text = "⏳ 画像を更新中...";
+            _lblStatus.Text      = "⏳ 画像を更新中...";
 
             try
             {
@@ -327,33 +338,61 @@ namespace MovieConverter
                 int    mm      = (int)((seconds % 3600) / 60);
                 double ss      = seconds % 60;
                 string timeArg = $"{hh:D2}:{mm:D2}:{ss:06.3f}";
-                string args    = $"-ss {timeArg} -i \"{_videoFile}\" " +
-                                 $"-frames:v 1 -q:v 2 -y \"{thumbFile}\"";
 
+                // Arguments 文字列の代わりに ArgumentList を使い、
+                // Unicode パス（日本語ファイル名等）の引数エスケープ問題を回避する
                 using var proc = new Process();
                 proc.StartInfo = new ProcessStartInfo
                 {
                     FileName               = _ffmpegPath,
-                    Arguments              = args,
                     UseShellExecute        = false,
                     CreateNoWindow         = true,
                     RedirectStandardOutput = true,
-                    RedirectStandardError  = true
+                    RedirectStandardError  = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding  = Encoding.UTF8
                 };
+                proc.StartInfo.ArgumentList.Add("-ss");
+                proc.StartInfo.ArgumentList.Add(timeArg);
+                proc.StartInfo.ArgumentList.Add("-i");
+                proc.StartInfo.ArgumentList.Add(_videoFile);
+                proc.StartInfo.ArgumentList.Add("-frames:v");
+                proc.StartInfo.ArgumentList.Add("1");
+                proc.StartInfo.ArgumentList.Add("-q:v");
+                proc.StartInfo.ArgumentList.Add("2");
+                proc.StartInfo.ArgumentList.Add("-y");
+                proc.StartInfo.ArgumentList.Add(thumbFile);
+
+                var stderrBuf = new StringBuilder();
                 proc.OutputDataReceived += (s, e) => { };
-                proc.ErrorDataReceived  += (s, e) => { };
+                proc.ErrorDataReceived  += (s, e) => { if (e.Data != null) stderrBuf.AppendLine(e.Data); };
                 proc.Start();
                 proc.BeginOutputReadLine();
                 proc.BeginErrorReadLine();
 
-                bool exited = await Task.Run(() => proc.WaitForExit(5000)).ConfigureAwait(true);
+                bool exited   = await Task.Run(() => proc.WaitForExit(8000)).ConfigureAwait(true);
+                int  exitCode = exited ? proc.ExitCode : -1;
+
                 if (ct.IsCancellationRequested)
                 {
                     if (!exited) { try { proc.Kill(); } catch { } }
                     return;
                 }
                 if (!exited) { try { proc.Kill(); } catch { } return; }
-                if (!File.Exists(thumbFile)) return;
+
+                if (!File.Exists(thumbFile))
+                {
+                    string errSuffix = exitCode != 0 ? $" (終了コード: {exitCode})" : "";
+                    LogMessage?.Invoke($"[代替プレビュー] サムネイル生成失敗{errSuffix}: {Path.GetFileName(_videoFile)}");
+                    // stderr の最終行（エラーの要因を含む）をログに出す
+                    string stderr = stderrBuf.ToString().Trim();
+                    if (stderr.Length > 0)
+                    {
+                        string[] lines = stderr.Split('\n');
+                        LogMessage?.Invoke($"[代替プレビュー] ffmpeg: {lines[^1].Trim()}");
+                    }
+                    return;
+                }
 
                 byte[] data = await Task.Run(() => File.ReadAllBytes(thumbFile), ct)
                     .ConfigureAwait(true);
@@ -370,29 +409,32 @@ namespace MovieConverter
                     Invoke(new Action(() => SetImage(bmp)));
                 else
                     SetImage(bmp);
+
+                succeeded = true;
             }
             catch (OperationCanceledException) { }
-            catch { }
+            catch (Exception ex)
+            {
+                LogMessage?.Invoke($"[代替プレビュー] サムネイル例外: {ex.GetType().Name}: {ex.Message}");
+            }
             finally
             {
                 if (!ct.IsCancellationRequested)
                 {
                     _generating = false;
-                    if (InvokeRequired)
-                    {
-                        Invoke(new Action(() =>
-                        {
-                            SetButtonsEnabled(!_converting && _videoFile != null);
-                            if (_lblStatus.Text == "⏳ 画像を更新中...")
-                                _lblStatus.Text = "";
-                        }));
-                    }
-                    else
+                    void UpdateUI()
                     {
                         SetButtonsEnabled(!_converting && _videoFile != null);
-                        if (_lblStatus.Text == "⏳ 画像を更新中...")
+                        if (!succeeded && _lblStatus.Text == "⏳ 画像を更新中...")
+                        {
+                            _lblStatus.ForeColor = Color.FromArgb(255, 100, 100);
+                            _lblStatus.Text      = "⚠ サムネイルを生成できませんでした";
+                        }
+                        else if (_lblStatus.Text == "⏳ 画像を更新中...")
                             _lblStatus.Text = "";
                     }
+                    if (InvokeRequired) Invoke(new Action(UpdateUI));
+                    else UpdateUI();
                 }
             }
         }

@@ -165,7 +165,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.4.10";
+            Text = "動画簡易変換ツール  v0.4.11";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -874,6 +874,7 @@ namespace MovieConverter
                 {
                     Dock = DockStyle.Fill
                 };
+                _fallbackPreview.LogMessage  += AppendLog;
                 _fallbackPreview.TimeChanged += t =>
                 {
                     _currentTime = t;
