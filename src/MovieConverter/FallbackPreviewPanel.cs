@@ -249,7 +249,7 @@ namespace MovieConverter
 
         private void SeekToTextBox()
         {
-            string input = _txtTime.Text.Trim();
+            string input = (_txtTime.Text ?? "").Trim();
             if (TryParseTime(input, out double t))
             {
                 t = Math.Max(0, t);
