@@ -3,7 +3,7 @@
 | 項目 | 内容 |
 |------|------|
 | ツール名 | 動画簡易変換ツール |
-| バージョン | v0.4.6 |
+| バージョン | v0.4.7 |
 | 初回作成日 | 2026-05-23 |
 | v0.1.1更新日 | 2026-05-23 |
 | v0.1.2更新日 | 2026-05-23 |
@@ -26,8 +26,52 @@
 | v0.4.4更新日 | 2026-05-25 |
 | v0.4.5更新日 | 2026-05-25 |
 | v0.4.6更新日 | 2026-05-25 |
+| v0.4.7更新日 | 2026-05-26 |
 | 参照ガイド | reference/guide_context.md（同梱方式） |
 | GitHub Pages | 403エラーにより参照不可 — guide_context.md で代替 |
+
+---
+
+## v0.4.7 実施した変更
+
+### 背景・目的
+
+v0.4.6 で v0.4 系の安定化・配布前整理が完了した。v0.4.7 では WebView2 Runtime 未インストール環境でも動画再生によるプレビューができるよう、Windows Media Player COM (wmp.dll) を使ったプレビュー方式を検証実装した。
+
+### WMP COM 検証実装の判断
+
+| 観点 | 内容 |
+|------|------|
+| 採用目的 | WebView2 なし端末でも再生・シーク・音量調整を試すための検証 |
+| 採用範囲 | 「WMPプレビュー（検証）」コンボボックス選択時のみ有効 |
+| 長期採用 | しない。WMP COM は Microsoft が今後推奨しない方針のため |
+| 失敗時の扱い | VideoError イベント → 代替プレビューへ自動切り替え |
+| 起動への影響 | なし。InitializeAsync はノーオペレーション（LoadVideo 時に遅延初期化） |
+
+### リスク記録
+
+| リスク | 対処 |
+|--------|------|
+| wmp.dll が未インストールの環境 | COMException をキャッチし VideoError で通知、代替プレビューへフォールバック |
+| COM 操作中のクラッシュ | すべての COM 呼び出しを try-catch で保護 |
+| ポーリングタイマーの精度 | 500ms ポーリングは目視確認レベルで十分と判断 |
+| WMPLib COM 参照のビルド | `Condition="'$(OS)' == 'Windows_NT'"` で Linux ビルド環境を除外 |
+
+### 実施した変更
+
+| # | 変更対象 | 内容 |
+|---|----------|------|
+| 1 | `WmpVideoPlayer.cs` | 新規作成。WMP COM を使った IVideoPlayer 実装 |
+| 2 | `MainForm.cs` | PreviewMode enum 追加、_wmpPlayer/_activeVideoPlayer フィールド追加、プレビュー方式コンボボックス追加、LoadFile ・再生コントロールをモード対応に変更 |
+| 3 | `MovieConverter.csproj` | WMPLib COMReference 追加（Windows_NT 条件付き）、バージョン 0.4.7.0 |
+| 4 | ドキュメント | release-note・tool_design・test_scenarios・release_checklist・admin_manual 更新 |
+
+### v0.4.7 の位置づけ
+
+WMP 方式が実機で安定動作するか確認した上で、v0.5.0 以降の方針を決定する。
+
+- **安定する場合**: 代替プレビュー（静止画）を WMP プレビューに置き換えるか、共存させる
+- **安定しない場合**: WMP 方式を削除し、代替プレビューに一本化する（その場合 WmpVideoPlayer.cs は削除対象）
 
 ---
 
