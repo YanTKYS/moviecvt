@@ -1,15 +1,16 @@
 using System;
 using System.Drawing;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using WMPLib;
 
 namespace MovieConverter
 {
     /// <summary>
     /// Windows Media Player COM（wmp.dll）を使った IVideoPlayer 実装。
+    ///
+    /// WMPLib COMReference は dotnet build (MSBuild CoreCLR) では使用不可（MSB4803）のため、
+    /// dynamic（IDispatch 経由の遅延バインド）で COM 操作する。
     ///
     /// 【検証用途のみ】Microsoft は WMP COM を今後推奨しない方針のため、
     /// 本クラスは長期前提での主方式として使用しない。
@@ -31,14 +32,16 @@ namespace MovieConverter
         {
             public WmpAxHost() : base(WmpOcxClsid) { }
             protected override void AttachInterfaces() { }
-            public IWMPPlayer4? GetWmpPlayer() => GetOcx() as IWMPPlayer4;
+            // GetOcx() が返す COM オブジェクトを object として渡す。
+            // 呼び出し側が dynamic にキャストして IDispatch 経由で操作する。
+            public object? GetOcxObject() => GetOcx();
         }
 
         // ─── コントロール ──────────────────────────────────────────────
         private readonly Panel _container;
         private readonly Label _hint;
         private WmpAxHost? _axHost;
-        private IWMPPlayer4? _wmp;
+        private object? _wmp;   // WMP COM オブジェクト（dynamic でアクセス）
 
         // ─── ポーリングタイマー ────────────────────────────────────────
         private readonly System.Windows.Forms.Timer _pollTimer;
@@ -116,14 +119,11 @@ namespace MovieConverter
 
             try
             {
-                _wmp!.settings.autoStart = false;
-                _wmp.URL = filePath;
+                dynamic wmp = _wmp!;
+                wmp.settings.autoStart = false;
+                wmp.URL = filePath;
                 _pollTimer.Start();
                 LogMessage?.Invoke($"[WMP] 読み込み開始: {Path.GetFileName(filePath)}");
-            }
-            catch (COMException ex)
-            {
-                NotifyError($"WMP読み込みエラー: {ex.Message} (HRESULT: 0x{ex.HResult:X8})");
             }
             catch (Exception ex)
             {
@@ -135,36 +135,31 @@ namespace MovieConverter
         public void Play()
         {
             if (_wmp == null) return;
-            try { _wmp.controls.play(); }
-            catch { }
+            try { dynamic d = _wmp; d.controls.play(); } catch { }
         }
 
         public void Pause()
         {
             if (_wmp == null) return;
-            try { _wmp.controls.pause(); }
-            catch { }
+            try { dynamic d = _wmp; d.controls.pause(); } catch { }
         }
 
         public void Seek(double seconds)
         {
             if (_wmp == null) return;
-            try { _wmp.controls.currentPosition = seconds; }
-            catch { }
+            try { dynamic d = _wmp; d.controls.currentPosition = seconds; } catch { }
         }
 
         public void SetVolume(double volume)
         {
             if (_wmp == null) return;
-            try { _wmp.settings.volume = (int)Math.Round(volume * 100.0); }
-            catch { }
+            try { dynamic d = _wmp; d.settings.volume = (int)Math.Round(volume * 100.0); } catch { }
         }
 
         public void SetMute(bool muted)
         {
             if (_wmp == null) return;
-            try { _wmp.settings.mute = muted; }
-            catch { }
+            try { dynamic d = _wmp; d.settings.mute = muted; } catch { }
         }
 
         // ─── 遅延初期化 ───────────────────────────────────────────────
@@ -177,12 +172,13 @@ namespace MovieConverter
                 _container.Controls.Add(_axHost);
                 _axHost.CreateControl();
 
-                _wmp = _axHost.GetWmpPlayer();
+                _wmp = _axHost.GetOcxObject();
                 if (_wmp == null)
                     throw new InvalidOperationException("WMP インターフェースの取得に失敗しました");
 
-                _wmp.settings.autoStart = false;
-                _wmp.uiMode             = "none";
+                dynamic wmp = _wmp;
+                wmp.settings.autoStart = false;
+                wmp.uiMode             = "none";
 
                 _initialized     = true;
                 _hint.Visible    = false;
@@ -190,10 +186,6 @@ namespace MovieConverter
 
                 LogMessage?.Invoke("[WMP] Windows Media Player プレビューを初期化しました（検証モード）");
                 return true;
-            }
-            catch (COMException ex)
-            {
-                return FailInit($"COMエラー (HRESULT: 0x{ex.HResult:X8}): {ex.Message}");
             }
             catch (Exception ex)
             {
@@ -215,9 +207,25 @@ namespace MovieConverter
             if (_wmp == null) return;
             try
             {
-                int    state    = _wmp.playState;
-                double duration = _wmp.currentMedia?.duration ?? 0;
-                double position = _wmp.controls?.currentPosition ?? 0;
+                dynamic wmp = _wmp;
+                int state = (int)wmp.playState;
+
+                // currentMedia・controls は未ロード時に null を返す場合があるため個別に保護する
+                double duration = 0;
+                try
+                {
+                    object? mediaObj = wmp.currentMedia;
+                    if (mediaObj != null) duration = (double)((dynamic)mediaObj).duration;
+                }
+                catch { }
+
+                double position = 0;
+                try
+                {
+                    object? ctrlObj = wmp.controls;
+                    if (ctrlObj != null) position = (double)((dynamic)ctrlObj).currentPosition;
+                }
+                catch { }
 
                 // メディア読み込み完了の検出
                 if (!_mediaLoaded && duration > 0)
@@ -279,7 +287,7 @@ namespace MovieConverter
         {
             _pollTimer.Stop();
             if (_wmp == null) return;
-            try { _wmp.controls.stop(); } catch { }
+            try { dynamic d = _wmp; d.controls.stop(); } catch { }
         }
 
         // ─── ユーティリティ ────────────────────────────────────────────
