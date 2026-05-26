@@ -19,18 +19,8 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2365.46" />
   </ItemGroup>
 
-  <!-- WMP COM 参照（v0.4.7 検証実装）: Windows 環境でのみ有効 -->
-  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-    <COMReference Include="WMPLib">
-      <Guid>{6BF52A52-394A-11D3-B153-00C04F79FAA6}</Guid>
-      <VersionMajor>1</VersionMajor>
-      <VersionMinor>0</VersionMinor>
-      <Lcid>0</Lcid>
-      <WrapperTool>tlbimp</WrapperTool>
-      <Isolated>false</Isolated>
-      <EmbedInteropTypes>true</EmbedInteropTypes>
-    </COMReference>
-  </ItemGroup>
+  <!-- WMP COM は COMReference (ResolveComReference) を使わず dynamic (IDispatch) で操作する。
+       ResolveComReference は .NET Core 版 MSBuild (dotnet build) では使用不可 (MSB4803)。 -->
 
   <!-- WpfMediaElementVideoPlayer.cs は UseWpf=true が必要なため v0.3.2 ではコンパイル対象外 -->
   <ItemGroup>
