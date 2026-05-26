@@ -12,6 +12,8 @@ namespace MovieConverter
 {
     public class MainForm : Form
     {
+        private enum PreviewMode { Standard, Fallback, Wmp }
+
         // ─── コントロール ───────────────────────────────────────────
         private Panel pnlFile = null!;
         private Button btnBrowse = null!;
@@ -24,7 +26,11 @@ namespace MovieConverter
         private WebView2VideoPlayer _webView2Player = null!;
         private IVideoPlayer _player = null!;
 
-        // プレビュースロット（WebView2 または代替プレビューを切り替えるコンテナ）
+        // WMPプレビュー（検証）
+        private WmpVideoPlayer? _wmpPlayer;
+        private IVideoPlayer? _activeVideoPlayer;
+
+        // プレビュースロット（WebView2・代替・WMPを切り替えるコンテナ）
         private Panel _previewSlot = null!;
         private FallbackPreviewPanel? _fallbackPreview;
         private bool _fallbackPreviewActive;
@@ -65,6 +71,7 @@ namespace MovieConverter
 
         private Button btnSaveLog = null!;
         private Button btnDiagnostic = null!;
+        private ComboBox _cmbPreviewMode = null!;
         private TextBox txtLog = null!;
 
         // ─── 状態 ────────────────────────────────────────────────────
@@ -93,6 +100,7 @@ namespace MovieConverter
         {
             _webView2Player = new WebView2VideoPlayer();
             _player = _webView2Player;
+            _activeVideoPlayer = _player;
             InitializeComponent();
             SubscribePlayerEvents();
             SetupDragDrop();
@@ -156,7 +164,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.4.6";
+            Text = "動画簡易変換ツール  v0.4.7";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -547,7 +555,32 @@ namespace MovieConverter
             };
             btnDiagnostic.Click += BtnDiagnostic_Click;
 
-            pnlLogHeader.Controls.AddRange(new Control[] { btnSaveLog, btnDiagnostic });
+            var lblPreviewMode = new Label
+            {
+                Text = "プレビュー方式:",
+                Location = new Point(225, 4),
+                Size = new Size(88, 20),
+                TextAlign = ContentAlignment.MiddleRight,
+                ForeColor = Color.FromArgb(60, 60, 60),
+                Font = new Font("Meiryo UI", 8.5f)
+            };
+
+            _cmbPreviewMode = new ComboBox
+            {
+                Location = new Point(318, 2),
+                Size = new Size(165, 24),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = new Font("Meiryo UI", 8.5f)
+            };
+            _cmbPreviewMode.Items.AddRange(new object[]
+            {
+                "標準プレビュー",
+                "代替プレビュー（静止画）",
+                "WMPプレビュー（検証）"
+            });
+            _cmbPreviewMode.SelectedIndex = 0;
+
+            pnlLogHeader.Controls.AddRange(new Control[] { btnSaveLog, btnDiagnostic, lblPreviewMode, _cmbPreviewMode });
             tableLayout.Controls.Add(pnlLogHeader, 0, 7);
 
             // ── Row 8: ログ ──
@@ -674,12 +707,10 @@ namespace MovieConverter
             _isPlaying = false;
             UpdatePlayPauseButton();
 
-            // 代替プレビューが表示中なら標準プレイヤー表示に戻す
-            // （新ファイルで WebView2 が成功した場合は標準プレイヤーを表示したままにする。
-            //   失敗した場合は OnVideoPlayerError → ShowFallbackPreview で再び切り替わる）
-            _player.PreviewControl.Visible = true;
-            if (_fallbackPreview != null)
-                _fallbackPreview.Visible = false;
+            // すべてのプレビューを非表示にしてからモードに応じて切り替える
+            _player.PreviewControl.Visible = false;
+            if (_fallbackPreview != null) _fallbackPreview.Visible = false;
+            if (_wmpPlayer != null) _wmpPlayer.PreviewControl.Visible = false;
 
             var fi = new FileInfo(filePath);
             lblFilePath.Text = $"ファイル: {fi.FullName}";
@@ -692,7 +723,27 @@ namespace MovieConverter
             SetStatus("状態: 動画を読み込み中...", Color.FromArgb(60, 60, 60));
             AppendLog($"[読み込み] {fi.FullName} ({FormatFileSize(fi.Length)})");
 
-            _player.LoadVideo(filePath);
+            switch (GetCurrentPreviewMode())
+            {
+                case PreviewMode.Standard:
+                    _activeVideoPlayer = _player;
+                    _player.PreviewControl.Visible = true;
+                    _player.LoadVideo(filePath);
+                    break;
+                case PreviewMode.Fallback:
+                    _activeVideoPlayer = null;
+                    _fallbackPreviewActive = true;
+                    AppendLog("[プレビュー] 代替プレビューモードでファイルを読み込みます。");
+                    AppendLog("  → ナビゲーションボタンで位置を移動し、「現在位置を開始に設定」等を使ってください。");
+                    SetStatus("状態: 代替プレビューを使用しています（サムネイル表示）",
+                        Color.FromArgb(160, 80, 0));
+                    ShowFallbackPreview();
+                    ActivateConversionWithoutPreview();
+                    break;
+                case PreviewMode.Wmp:
+                    ShowWmpPreview(filePath);
+                    break;
+            }
         }
 
         private void OnVideoLoaded()
@@ -748,6 +799,7 @@ namespace MovieConverter
             // WebView2 が初期化できていない場合（未インストール等）→ 代替プレビューに切り替える
             if (!_webView2Player.IsReady && !string.IsNullOrEmpty(_inputFile))
             {
+                _activeVideoPlayer = null;
                 _fallbackPreviewActive = true;
                 SetStatus("状態: 代替プレビューを使用しています（サムネイル表示）",
                     Color.FromArgb(160, 80, 0));
@@ -1022,21 +1074,21 @@ namespace MovieConverter
         private void BtnPlayPause_Click(object? sender, EventArgs e)
         {
             if (!_videoLoaded) return;
-            if (_isPlaying) _player.Pause();
-            else            _player.Play();
+            if (_isPlaying) _activeVideoPlayer?.Pause();
+            else            _activeVideoPlayer?.Play();
         }
 
         private void SeekRelative(double delta)
         {
             if (!_videoLoaded) return;
             double newTime = Math.Max(0, Math.Min(_currentTime + delta, _duration));
-            _player.Seek(newTime);
+            _activeVideoPlayer?.Seek(newTime);
         }
 
         private void TrkSeek_Scroll(object? sender, EventArgs e)
         {
             if (!_videoLoaded || _isSeekBarUpdating) return;
-            _player.Seek(trkSeek.Value);
+            _activeVideoPlayer?.Seek(trkSeek.Value);
         }
 
         private void UpdateTimeDisplay()
@@ -1405,11 +1457,11 @@ namespace MovieConverter
 
         private void TrkVolume_Scroll(object? sender, EventArgs e)
         {
-            _player.SetVolume(trkVolume.Value / 100.0);
+            _activeVideoPlayer?.SetVolume(trkVolume.Value / 100.0);
             if (trkVolume.Value > 0)
             {
                 btnMute.Text = "消音";
-                _player.SetMute(false);
+                _activeVideoPlayer?.SetMute(false);
             }
         }
 
@@ -1417,7 +1469,7 @@ namespace MovieConverter
         {
             bool nowMuted = btnMute.Text == "消音";
             btnMute.Text = nowMuted ? "音有" : "消音";
-            _player.SetMute(nowMuted);
+            _activeVideoPlayer?.SetMute(nowMuted);
         }
 
         private void CmbQuality_SelectedIndexChanged(object? sender, EventArgs e)
@@ -2024,10 +2076,71 @@ namespace MovieConverter
             dlg.ShowDialog(this);
         }
 
+        // ─── WMPプレビュー（検証） ────────────────────────────────────
+        private void ShowWmpPreview(string filePath)
+        {
+            if (_wmpPlayer == null)
+            {
+                _wmpPlayer = new WmpVideoPlayer();
+
+                _wmpPlayer.VideoLoaded += duration =>
+                {
+                    _duration = duration;
+                    _videoLoaded = true;
+                    OnVideoLoaded();
+                };
+                _wmpPlayer.TimeUpdated += (pos, dur) =>
+                {
+                    _currentTime = pos;
+                    if (dur > 0) _duration = dur;
+                    UpdateTimeDisplay();
+                };
+                _wmpPlayer.PlaybackStarted += () => { _isPlaying = true;  UpdatePlayPauseButton(); };
+                _wmpPlayer.PlaybackPaused  += () => { _isPlaying = false; UpdatePlayPauseButton(); };
+                _wmpPlayer.PlaybackEnded   += () => { _isPlaying = false; UpdatePlayPauseButton(); };
+                _wmpPlayer.VideoError  += OnWmpVideoError;
+                _wmpPlayer.LogMessage  += AppendLog;
+
+                _previewSlot.Controls.Add(_wmpPlayer.PreviewControl);
+            }
+
+            _activeVideoPlayer = _wmpPlayer;
+            _wmpPlayer.PreviewControl.Visible = true;
+            AppendLog("[WMP] WMPプレビューモードでファイルを読み込みます。");
+            _wmpPlayer.LoadVideo(filePath);
+        }
+
+        private void OnWmpVideoError(string message)
+        {
+            AppendLog($"[WMP エラー] {message}");
+            AppendLog("[WMP] 代替プレビュー（静止画）に切り替えます。");
+            _activeVideoPlayer = null;
+
+            if (_cmbPreviewMode.SelectedIndex != 1)
+                _cmbPreviewMode.SelectedIndex = 1;
+
+            _fallbackPreviewActive = true;
+            SetStatus("状態: WMPプレビューが使用できません。代替プレビューを使用しています。",
+                Color.FromArgb(160, 80, 0));
+            ShowFallbackPreview();
+            ActivateConversionWithoutPreview();
+        }
+
+        private PreviewMode GetCurrentPreviewMode()
+        {
+            return _cmbPreviewMode.SelectedIndex switch
+            {
+                1 => PreviewMode.Fallback,
+                2 => PreviewMode.Wmp,
+                _ => PreviewMode.Standard
+            };
+        }
+
         // ─── フォームクローズ ──────────────────────────────────────────
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             _cancelSource?.Cancel();
+            _wmpPlayer?.StopAndCleanup();
             _fallbackPreview?.CleanupTempFiles();
             base.OnFormClosing(e);
         }
