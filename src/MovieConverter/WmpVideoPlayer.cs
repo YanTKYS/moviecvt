@@ -170,21 +170,27 @@ namespace MovieConverter
             if (_initialized) return true;
             try
             {
-                _axHost = new WmpAxHost { Dock = DockStyle.Fill, Visible = false };
+                // Controls.Add 前に _container のハンドルを確保する。
+                // Visible = false のコントロールを親に追加しても WinForms はハンドルを
+                // 作成しないため、AxHost の OCX 初期化（CoCreateInstance）が走らず
+                // GetOcx() が null を返す。デフォルト Visible = true のまま追加する。
+                _ = _container.Handle;
+                _axHost = new WmpAxHost { Dock = DockStyle.Fill };
                 _container.Controls.Add(_axHost);
-                _axHost.CreateControl();
 
                 _wmp = _axHost.GetOcxObject();
                 if (_wmp == null)
-                    throw new InvalidOperationException("WMP インターフェースの取得に失敗しました");
+                    throw new InvalidOperationException(
+                        "WMP OCX の取得に失敗しました。" +
+                        "Windows Media Player がインストールされていないか、" +
+                        "オプション機能として無効になっている可能性があります。");
 
                 dynamic wmp = _wmp;
                 wmp.settings.autoStart = false;
                 wmp.uiMode             = "none";
 
-                _initialized     = true;
-                _hint.Visible    = false;
-                _axHost.Visible  = true;
+                _initialized  = true;
+                _hint.Visible = false;
 
                 LogMessage?.Invoke("[WMP] Windows Media Player プレビューを初期化しました（検証モード）");
                 return true;

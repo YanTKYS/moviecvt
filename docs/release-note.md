@@ -1,3 +1,27 @@
+## v0.4.10
+### Title
+動画簡易変換ツール v0.4.10 — WMPプレビュー AxHost 初期化バグ修正
+
+### Note
+v0.4.9 実機確認でWMPプレビューが必ず初期化失敗する問題が発覚しました。原因は `WmpVideoPlayer.EnsureInitialized()` で `WmpAxHost` を `Visible = false` のまま `Controls.Add` していたため、WinForms がハンドルを作成せず `AxHost` の OCX 初期化（`CoCreateInstance`）が実行されなかったことです。`Visible` をデフォルト（true）に戻し、`_container.Handle` を事前取得する修正を行いました。
+
+### 変更内容
+
+#### バグ修正
+
+| 項目 | 内容 |
+|------|------|
+| `WmpVideoPlayer.EnsureInitialized()` | `WmpAxHost { Visible = false }` を `WmpAxHost {}` に変更。`_container.Handle` を先に取得。不要な `CreateControl()` 呼び出しと `Visible = true` 代入を削除。エラーメッセージにWMP未インストールの可能性を追記 |
+
+#### バージョン更新
+
+| ファイル | 変更 |
+|---------|------|
+| MainForm.cs | タイトル v0.4.10 |
+| MovieConverter.csproj | バージョン 0.4.10.0 / v0.4.10 |
+
+---
+
 ## v0.4.9
 ### Title
 動画簡易変換ツール v0.4.9 — WMPプレビュー本番環境実機確認記録テンプレート追加
