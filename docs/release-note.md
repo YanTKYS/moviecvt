@@ -1,3 +1,37 @@
+## v0.4.8
+### Title
+動画簡易変換ツール v0.4.8 — WMPプレビュー軽微修正・プレビュー方式切替改善
+
+### Note
+v0.4.7 WMPプレビュー検証実装の軽微修正です。WMP失敗時に画面が重なる問題を修正し、プレビュー方式コンボボックスで方式を切り替えた際に現在のファイルを自動で再読み込みするようにしました。あわせてドキュメントの COMReference に関する説明を実装に合わせて修正しました。
+
+### 変更内容
+
+#### バグ修正・改善
+
+| 項目 | 内容 |
+|------|------|
+| WMP失敗時の表示重複修正 | `OnWmpVideoError` で WMP コントロールを明示的に非表示にしてから代替プレビューを表示する |
+| コンボボックス変更時の再読み込み | ファイル読み込み済みの場合、コンボボックスで方式を変更すると現在のファイルを新しい方式で自動再読み込みする |
+| コンボボックス変更時のヒント表示 | ファイル未読み込み・変換中は「次回読み込み時に反映されます」をログに表示する |
+| エラーループ防止 | `_suppressPreviewModeChange` フラグにより、WMP エラー時のコンボボックス変更が再読み込みループを起こさないよう保護 |
+
+#### ドキュメント修正
+
+| 項目 | 内容 |
+|------|------|
+| release-note v0.4.7 | 「WMPLib COMReference 追加」→「dynamic (IDispatch) 経由での COM 操作に変更」 |
+| development_report v0.4.7 | COMReference 関連の記述を dynamic / IDispatch 方式に修正 |
+
+#### バージョン更新
+
+| ファイル | 変更 |
+|---------|------|
+| MainForm.cs | タイトル v0.4.8 |
+| MovieConverter.csproj | バージョン 0.4.8.0 / v0.4.8 |
+
+---
+
 ## v0.4.7
 ### Title
 動画簡易変換ツール v0.4.7 — WMPプレビュー検証実装
@@ -13,7 +47,7 @@ Windows Media Player COM (wmp.dll) を使ったプレビュー方式を検証実
 |------|------|
 | `WmpVideoPlayer.cs` | Windows Media Player COM (wmp.dll) を使った `IVideoPlayer` 実装を新規作成 |
 | `MainForm.cs` | プレビュー方式コンボボックス（標準/代替/WMP）追加・WMP方式対応 |
-| `MovieConverter.csproj` | WMPLib COMReference 追加・バージョン 0.4.7.0 に更新 |
+| `MovieConverter.csproj` | WMPLib COMReference を使わず dynamic (IDispatch) 方式に変更・バージョン 0.4.7.0 に更新 |
 
 **WmpVideoPlayer の特徴:**
 - `InitializeAsync` はノーオペレーション（起動時に WMP COM を初期化しない）
