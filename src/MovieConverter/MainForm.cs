@@ -76,6 +76,7 @@ namespace MovieConverter
 
         // ─── 状態 ────────────────────────────────────────────────────
         private string? _inputFile;
+        private bool _suppressPreviewModeChange;
         private double _duration;
         private double _currentTime;
         private double? _startSeconds;
@@ -164,7 +165,7 @@ namespace MovieConverter
         {
             SuspendLayout();
 
-            Text = "動画簡易変換ツール  v0.4.7";
+            Text = "動画簡易変換ツール  v0.4.8";
             ClientSize = new Size(820, 900);
             MinimumSize = new Size(780, 820);
             Font = new Font("Meiryo UI", 9f);
@@ -579,6 +580,7 @@ namespace MovieConverter
                 "WMPプレビュー（検証）"
             });
             _cmbPreviewMode.SelectedIndex = 0;
+            _cmbPreviewMode.SelectedIndexChanged += CmbPreviewMode_SelectedIndexChanged;
 
             pnlLogHeader.Controls.AddRange(new Control[] { btnSaveLog, btnDiagnostic, lblPreviewMode, _cmbPreviewMode });
             tableLayout.Controls.Add(pnlLogHeader, 0, 7);
@@ -2116,14 +2118,53 @@ namespace MovieConverter
             AppendLog("[WMP] 代替プレビュー（静止画）に切り替えます。");
             _activeVideoPlayer = null;
 
-            if (_cmbPreviewMode.SelectedIndex != 1)
-                _cmbPreviewMode.SelectedIndex = 1;
+            // WMPコントロールを非表示にして代替プレビューと重ならないようにする
+            if (_wmpPlayer != null)
+                _wmpPlayer.PreviewControl.Visible = false;
+
+            // コンボボックスの変更を抑制しながらインデックスを更新
+            // （SelectedIndexChanged ハンドラによる再読み込みループを防ぐ）
+            _suppressPreviewModeChange = true;
+            try
+            {
+                if (_cmbPreviewMode.SelectedIndex != 1)
+                    _cmbPreviewMode.SelectedIndex = 1;
+            }
+            finally
+            {
+                _suppressPreviewModeChange = false;
+            }
 
             _fallbackPreviewActive = true;
             SetStatus("状態: WMPプレビューが使用できません。代替プレビューを使用しています。",
                 Color.FromArgb(160, 80, 0));
             ShowFallbackPreview();
             ActivateConversionWithoutPreview();
+        }
+
+        private void CmbPreviewMode_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (_suppressPreviewModeChange) return;
+
+            string modeName = _cmbPreviewMode.Text;
+
+            // 変換中は切り替えのみ記録してリロードしない
+            if (_cancelSource != null)
+            {
+                AppendLog($"[プレビュー] 方式を「{modeName}」に変更しました。変換完了後にファイルを再度読み込むと反映されます。");
+                return;
+            }
+
+            // ファイルが読み込まれていない場合はヒントのみ表示
+            if (string.IsNullOrEmpty(_inputFile) || !File.Exists(_inputFile))
+            {
+                AppendLog($"[プレビュー] 方式を「{modeName}」に変更しました。次回ファイルを読み込むと反映されます。");
+                return;
+            }
+
+            // ファイルが読み込まれている場合は新しい方式で再読み込みする
+            AppendLog($"[プレビュー] 方式を「{modeName}」に変更しました。現在のファイルを再読み込みします。");
+            LoadFile(_inputFile, allowPreconvertDialog: false);
         }
 
         private PreviewMode GetCurrentPreviewMode()
