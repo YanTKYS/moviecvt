@@ -65,9 +65,11 @@ namespace MovieConverter
         public event Action?                 PlaybackStarted;
         public event Action?                 PlaybackPaused;
         public event Action?                 PlaybackEnded;
+#pragma warning disable CS0067 // WMP COM はこれらのイベントを発火しない（IVideoPlayer 実装上の要件）
         public event Action?                 PlaybackBlocked;
-        public event Action<string>?         VideoError;
         public event Action<string>?         FileDropped;
+#pragma warning restore CS0067
+        public event Action<string>?         VideoError;
         public event Action<string>?         LogMessage;
 
         // ─── コンストラクタ ────────────────────────────────────────────
